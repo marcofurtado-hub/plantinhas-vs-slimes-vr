@@ -1,0 +1,1619 @@
+<title>Plantinhas vs Slimes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sniglet:wght@400;800&family=Nunito:wght@700;900&display=swap">
+<style>
+  /* Layout: full-screen first-person 3D garden (WebXR-ready); sticker HUD and tool tray float on top for the desktop view. */
+  :root {
+    --sky: #bfe6ff;
+    --rose: #ff6fae;
+    --rose-deep: #e04b8e;
+    --lilac: #9b63e8;
+    --plum: #5a2f7a;
+    --cream: #fffaf2;
+    --font-display: "Sniglet", "Arial Rounded MT Bold", "Trebuchet MS", system-ui, sans-serif;
+    --font-body: "Nunito", "Trebuchet MS", system-ui, sans-serif;
+    color-scheme: light;
+  }
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  [hidden] { display: none !important; }
+  body {
+    background: var(--sky); color: var(--plum); font-family: var(--font-body);
+    -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; touch-action: none;
+  }
+  #stage canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  #stage.hover canvas { cursor: pointer; }
+
+  .hud {
+    position: fixed; top: calc(env(safe-area-inset-top, 0px) + 12px); left: 16px; right: 16px;
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; pointer-events: none;
+  }
+  .counters { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pill {
+    display: flex; align-items: center; gap: 6px; background: var(--cream); border-radius: 999px; padding: 4px 14px 4px 6px;
+    box-shadow: 0 3px 0 rgba(90, 47, 122, .18); font-family: var(--font-display); font-weight: 800; font-size: 22px; line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .pill canvas { width: 36px; height: 36px; }
+  .pill.bump { animation: bump .45s ease; }
+  @keyframes bump { 35% { transform: scale(1.25) rotate(-4deg) } }
+  .hud-right { display: flex; gap: 8px; }
+  .round-btn {
+    pointer-events: auto; height: 48px; min-width: 48px; border-radius: 999px; border: 0; padding: 0 12px;
+    background: var(--cream); color: var(--plum); box-shadow: 0 3px 0 rgba(90, 47, 122, .18);
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;
+    font-family: var(--font-display); font-weight: 800; font-size: 17px;
+  }
+  .round-btn svg { width: 26px; height: 26px; }
+  .round-btn:focus-visible, .tool:focus-visible, .play:focus-visible { outline: 3px solid var(--rose-deep); outline-offset: 3px; }
+
+  #toolbar {
+    position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+    display: flex; gap: 6px; padding: 8px; background: var(--cream); border-radius: 28px;
+    box-shadow: 0 5px 0 rgba(90, 47, 122, .2), 0 10px 30px rgba(40, 90, 30, .18); max-width: calc(100vw - 24px);
+  }
+  .tool {
+    width: min(70px, calc((100vw - 76px) / 6)); border: 0; border-radius: 20px; padding: 6px 2px 5px; background: transparent;
+    cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px;
+    font-family: var(--font-display); font-size: 14px; color: var(--plum); transition: transform .15s, background .15s;
+  }
+  .tool canvas { width: 46px; height: 46px; max-width: 100%; }
+  .tool:hover { background: #fdeef6; }
+  .tool.active { background: #ffd8ea; transform: translateY(-6px); box-shadow: 0 4px 0 #f3a9cc; }
+  .tool[data-tool="zap"].active { background: #efe2ff; box-shadow: 0 4px 0 #c7a8f3; }
+  .tool.nudge { animation: nudge .6s ease; }
+  .tool.alert { animation: alert 1s ease-in-out infinite; }
+  @keyframes nudge { 25% { transform: translateY(-14px) rotate(-6deg) } 55% { transform: translateY(-4px) rotate(5deg) } }
+  @keyframes alert { 0%,100% { background: #efe2ff } 50% { background: #fff6a8 } }
+  .keys { position: fixed; right: 16px; bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); font-size: 12px; line-height: 1.5; opacity: .75; text-align: right; pointer-events: none; color: #fff; text-shadow: 0 1px 2px rgba(60, 30, 80, .6); }
+  @media (max-width: 1100px) { .keys { display: none } }
+  @media (max-width: 420px) { .tool { font-size: 12px } .tool canvas { width: 38px; height: 38px } .pill { font-size: 19px } .pill canvas { width: 30px; height: 30px } .round-btn span { display: none } }
+
+  #intro { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(255, 240, 248, .35); backdrop-filter: blur(3px); }
+  .card {
+    background: var(--cream); border-radius: 36px; padding: 28px 24px 22px; max-width: 480px; width: 100%; text-align: center;
+    box-shadow: 0 8px 0 rgba(90, 47, 122, .2), 0 20px 50px rgba(90, 47, 122, .18);
+    display: flex; flex-direction: column; align-items: center; gap: 14px; animation: floaty 4s ease-in-out infinite;
+  }
+  @keyframes floaty { 50% { transform: translateY(-6px) } }
+  .card h1 {
+    margin: 0; font-family: var(--font-display); font-weight: 800; font-size: clamp(34px, 9vw, 52px); line-height: .95;
+    color: var(--rose); text-wrap: balance; text-shadow: 0 3px 0 var(--rose-deep), 0 6px 0 rgba(90, 47, 122, .15);
+  }
+  .card h1 span { color: #8bd35f; text-shadow: 0 3px 0 #4fa844, 0 6px 0 rgba(90, 47, 122, .15); }
+  .card p { margin: 0; font-size: 17px; line-height: 1.4; max-width: 36ch; text-wrap: balance; }
+  .buttons { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+  .play {
+    border: 0; cursor: pointer; font-family: var(--font-display); font-weight: 800; font-size: 24px; color: #fff;
+    background: var(--rose); padding: 12px 30px 14px; border-radius: 999px; box-shadow: 0 6px 0 var(--rose-deep); transition: transform .1s, box-shadow .1s;
+  }
+  .play.vr { background: var(--lilac); box-shadow: 0 6px 0 #6f3fc0; }
+  .play:active { transform: translateY(4px); box-shadow: 0 2px 0 var(--rose-deep); }
+  .play:disabled { opacity: .45; cursor: default; }
+  .how { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; text-align: left; font-size: 14px; line-height: 1.35; max-width: 40ch; }
+  .how b { font-family: var(--font-display); font-weight: 800; color: var(--rose-deep); white-space: nowrap; }
+  .tiny { font-size: 13px; opacity: .75; max-width: 40ch; }
+  @media (prefers-reduced-motion: reduce) { .card, .tool.alert { animation: none } }
+</style>
+
+<div id="stage"></div>
+
+<div class="hud">
+  <div class="counters">
+    <div class="pill" id="pFlowers" title="Margaridas colhidas"><canvas width="72" height="72" data-icon="daisy"></canvas><span id="nFlowers">0</span></div>
+    <div class="pill" id="pZapped" title="Cubinhos espantados"><canvas width="72" height="72" data-icon="cube"></canvas><span id="nZapped">0</span></div>
+  </div>
+  <div class="hud-right">
+    <button class="round-btn" id="vrBtn2" hidden><span>VR</span>
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-4l-2-2.5h-2L9 17H5a2 2 0 0 1-2-2zm5 2.2a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2m8 0a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2"/></svg>
+    </button>
+    <button class="round-btn" id="soundBtn" aria-label="Desligar som" title="Som">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/>
+        <path id="waves" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>
+        <path id="mute" d="M16 9.5l5 5M21 9.5l-5 5" hidden/>
+      </svg>
+    </button>
+  </div>
+</div>
+
+<nav id="toolbar" aria-label="Ferramentas">
+  <button class="tool active" data-tool="hoe" id="t-hoe"><canvas width="92" height="92" data-icon="hoe"></canvas><span>Arar</span></button>
+  <button class="tool" data-tool="rake" id="t-rake"><canvas width="92" height="92" data-icon="rake"></canvas><span>Afofar</span></button>
+  <button class="tool" data-tool="shovel" id="t-shovel"><canvas width="92" height="92" data-icon="shovel"></canvas><span>Furar</span></button>
+  <button class="tool" data-tool="seeds" id="t-seeds"><canvas width="92" height="92" data-icon="seeds"></canvas><span>Semear</span></button>
+  <button class="tool" data-tool="water" id="t-water"><canvas width="92" height="92" data-icon="water"></canvas><span>Regar</span></button>
+  <button class="tool" data-tool="zap" id="t-zap"><canvas width="92" height="92" data-icon="zap"></canvas><span>Raio</span></button>
+</nav>
+<div class="keys">Arraste ou use as setas para olhar em volta<br>Clique para usar · Espaço para raio · 1 a 6 trocam a ferramenta</div>
+
+<div id="intro">
+  <div class="card">
+    <h1>Plantinhas <span>vs</span> Slimes</h1>
+    <p>Sente na sua cadeirinha no meio do jardim de margaridas. Cuide dos canteiros e espante os cubinhos alienígenas com raios de choquinho!</p>
+    <div class="buttons">
+      <button class="play vr" id="vrBtn" disabled>Entrar no VR</button>
+      <button class="play" id="playBtn">Jogar aqui</button>
+    </div>
+    <div class="how" id="howVR">
+      <b>Gatilho direito</b><span>usa a ferramenta no canteiro</span>
+      <b>Gatilho esquerdo</b><span>a arminha solta uma bolinha de raio</span>
+      <b>A / B ou pulso</b><span>troca a ferramenta</span>
+      <b>Analógico</b><span>vira para os lados</span>
+    </div>
+    <div class="tiny" id="vrNote">Procurando óculos de VR…</div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+const TAU = Math.PI * 2;
+const rand = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const pick = arr => arr[(Math.random() * arr.length) | 0];
+const easeOut = t => 1 - (1 - t) * (1 - t);
+let T = 0;
+
+/* =========================================================
+   2D drawing kit — used to paint icons and textures
+   ========================================================= */
+function rr(c, x, y, w, h, r) {
+  r = Math.max(0, Math.min(r, w / 2, h / 2));
+  c.beginPath(); c.moveTo(x + r, y);
+  c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
+}
+function ell(c, x, y, rx, ry, rot = 0) { c.beginPath(); c.ellipse(x, y, Math.max(.1, rx), Math.max(.1, ry), rot, 0, TAU); }
+function circ(c, x, y, r) { c.beginPath(); c.arc(x, y, Math.max(.1, r), 0, TAU); }
+function starPath(c, x, y, r, n = 5, inner = .5, rot = 0) {
+  c.beginPath();
+  for (let i = 0; i < n * 2; i++) {
+    const a = rot + i * Math.PI / n - Math.PI / 2, rad = i % 2 ? r * inner : r;
+    i ? c.lineTo(x + Math.cos(a) * rad, y + Math.sin(a) * rad) : c.moveTo(x + Math.cos(a) * rad, y + Math.sin(a) * rad);
+  }
+  c.closePath();
+}
+function heartPath(c, x, y, s) {
+  c.beginPath(); c.moveTo(x, y + s * .35);
+  c.bezierCurveTo(x - s * 1.1, y - s * .35, x - s * .45, y - s * 1.05, x, y - s * .45);
+  c.bezierCurveTo(x + s * .45, y - s * 1.05, x + s * 1.1, y - s * .35, x, y + s * .35);
+  c.closePath();
+}
+function line(c, x1, y1, x2, y2) { c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke(); }
+
+function drawTool(c, type, sz) {
+  c.save(); c.lineCap = 'round'; c.lineJoin = 'round';
+  if (type === 'hoe') {
+    c.strokeStyle = '#b07a4a'; c.lineWidth = sz * .075; line(c, 0, sz * .25, 0, -sz * .55);
+    c.fillStyle = '#a9bdd0'; c.strokeStyle = '#7189a0'; c.lineWidth = sz * .025;
+    c.beginPath(); c.moveTo(-sz * .04, -sz * .62); c.lineTo(sz * .26, -sz * .57); c.lineTo(sz * .31, -sz * .38);
+    c.quadraticCurveTo(sz * .17, -sz * .43, sz * .01, -sz * .48); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle = '#ff8fc8'; circ(c, 0, -sz * .55, sz * .045); c.fill();
+  } else if (type === 'rake') {
+    c.strokeStyle = '#b07a4a'; c.lineWidth = sz * .075; line(c, 0, sz * .25, 0, -sz * .5);
+    const cy = -sz * .5, R = sz * .34;
+    c.fillStyle = '#ff8fc8';
+    c.beginPath(); c.moveTo(0, cy); c.arc(0, cy, R, -Math.PI / 2 - .55, -Math.PI / 2 + .55); c.closePath(); c.fill();
+    c.strokeStyle = '#e0579a'; c.lineWidth = sz * .03;
+    for (let i = -2; i <= 2; i++) { const a = -Math.PI / 2 + i * .24; line(c, 0, cy, Math.cos(a) * R * .97, cy + Math.sin(a) * R * .97); }
+    c.fillStyle = '#e0579a'; circ(c, 0, cy, sz * .05); c.fill();
+  } else if (type === 'shovel') {
+    c.fillStyle = '#ff8fc8'; rr(c, -sz * .05, -sz * .12, sz * .1, sz * .3, sz * .05); c.fill();
+    c.strokeStyle = '#8fa3b6'; c.lineWidth = sz * .04; line(c, 0, -sz * .12, 0, -sz * .22);
+    c.fillStyle = '#b4c6d6';
+    c.beginPath(); c.moveTo(0, -sz * .66);
+    c.quadraticCurveTo(sz * .2, -sz * .52, sz * .15, -sz * .3); c.quadraticCurveTo(sz * .08, -sz * .2, 0, -sz * .2);
+    c.quadraticCurveTo(-sz * .08, -sz * .2, -sz * .15, -sz * .3); c.quadraticCurveTo(-sz * .2, -sz * .52, 0, -sz * .66);
+    c.fill();
+    c.strokeStyle = '#8fa3b6'; c.lineWidth = sz * .02; line(c, 0, -sz * .58, 0, -sz * .26);
+  } else if (type === 'seeds') {
+    c.fillStyle = '#f0d39e'; rr(c, -sz * .16, sz * .02, sz * .34, sz * .36, sz * .12); c.fill();
+    c.fillStyle = '#d9b679'; rr(c, -sz * .09, -sz * .05, sz * .2, sz * .1, sz * .04); c.fill();
+    c.strokeStyle = '#e0579a'; c.lineWidth = sz * .03; line(c, -sz * .1, sz * .04, sz * .12, sz * .04);
+    c.fillStyle = '#8a5a32';
+    ell(c, -sz * .04, -sz * .07, sz * .025, sz * .035, .4); c.fill(); ell(c, sz * .04, -sz * .08, sz * .025, sz * .035, -.4); c.fill();
+    drawDaisyHead(c, sz * .01, sz * .22, sz * .1, '#ffffff', false);
+  } else if (type === 'water') {
+    c.translate(-sz * .12, sz * .14);
+    c.strokeStyle = '#6cc3f5'; c.lineWidth = sz * .055;
+    c.beginPath(); c.arc(sz * .1, sz * .02, sz * .13, Math.PI * 1.05, Math.PI * 1.95); c.stroke();
+    c.lineWidth = sz * .07; line(c, sz * .3, sz * .24, sz * .5, sz * .03);
+    c.fillStyle = '#4fb1ec'; ell(c, sz * .52, sz * .01, sz * .06, sz * .04, -.7); c.fill();
+    c.fillStyle = '#86d3ff'; rr(c, -sz * .08, sz * .02, sz * .38, sz * .32, sz * .1); c.fill();
+    c.fillStyle = '#b8e6ff'; rr(c, -sz * .08, sz * .02, sz * .38, sz * .08, sz * .04); c.fill();
+    c.fillStyle = '#ff7eb6'; heartPath(c, sz * .11, sz * .21, sz * .085); c.fill();
+  } else if (type === 'zap') {
+    c.fillStyle = '#9b63e8'; c.save(); c.rotate(.18); rr(c, -sz * .05, -sz * .04, sz * .11, sz * .24, sz * .05); c.fill(); c.restore();
+    c.fillStyle = '#7ee6c4'; c.beginPath(); c.moveTo(sz * .02, -sz * .14); c.lineTo(sz * .1, -sz * .27); c.lineTo(sz * .17, -sz * .14); c.closePath(); c.fill();
+    c.fillStyle = '#c9a3ff'; ell(c, sz * .1, -sz * .07, sz * .17, sz * .1); c.fill();
+    c.fillStyle = 'rgba(255,255,255,.55)'; ell(c, sz * .05, -sz * .11, sz * .08, sz * .03); c.fill();
+    c.fillStyle = '#ff8fc8'; rr(c, sz * .2, -sz * .115, sz * .22, sz * .085, sz * .04); c.fill();
+    c.strokeStyle = '#e0579a'; c.lineWidth = sz * .02; line(c, sz * .28, -sz * .11, sz * .28, -sz * .035); line(c, sz * .35, -sz * .11, sz * .35, -sz * .035);
+    c.shadowColor = '#fff36b'; c.shadowBlur = sz * .15;
+    c.fillStyle = '#fff36b'; circ(c, sz * .45, -sz * .072, sz * .06); c.fill();
+    c.shadowBlur = 0; c.fillStyle = '#fff'; circ(c, sz * .435, -sz * .085, sz * .02); c.fill();
+  }
+  c.restore();
+}
+function drawDaisyHead(c, x, y, r, petal, face = true) {
+  c.save(); c.translate(x, y);
+  c.fillStyle = petal; c.strokeStyle = 'rgba(200,170,190,.55)'; c.lineWidth = Math.max(.5, r * .03);
+  for (let i = 0; i < 12; i++) { const a = i / 12 * TAU; ell(c, Math.cos(a) * r * .6, Math.sin(a) * r * .6, r * .42, r * .16, a); c.fill(); c.stroke(); }
+  c.fillStyle = '#f2a81d'; circ(c, 0, r * .03, r * .4); c.fill();
+  c.fillStyle = '#ffd23f'; circ(c, 0, 0, r * .37); c.fill();
+  if (face) drawFace(c, 0, 0, r);
+  c.restore();
+}
+function drawFace(c, x, y, r) {
+  c.strokeStyle = '#7a4a2a'; c.lineWidth = r * .055; c.lineCap = 'round';
+  c.beginPath(); c.arc(x - r * .13, y - r * .02, r * .07, Math.PI * 1.1, Math.PI * 1.9); c.stroke();
+  c.beginPath(); c.arc(x + r * .13, y - r * .02, r * .07, Math.PI * 1.1, Math.PI * 1.9); c.stroke();
+  c.beginPath(); c.arc(x, y + r * .07, r * .08, Math.PI * .15, Math.PI * .85); c.stroke();
+  c.fillStyle = 'rgba(255,120,150,.55)'; ell(c, x - r * .25, y + r * .1, r * .07, r * .045); c.fill(); ell(c, x + r * .25, y + r * .1, r * .07, r * .045); c.fill();
+}
+function drawCubeIcon(c, s) {
+  c.strokeStyle = '#4fbf4a'; c.lineWidth = s * .06; c.lineCap = 'round'; line(c, 0, -s * .98, s * .04, -s * 1.25);
+  c.fillStyle = '#c99bff'; circ(c, s * .04, -s * 1.3, s * .1); c.fill();
+  rr(c, -s / 2, -s, s, s, s * .24); c.fillStyle = '#7be36b'; c.fill();
+  c.save(); rr(c, -s / 2, -s, s, s, s * .24); c.clip(); c.fillStyle = '#c2f7ae'; c.fillRect(-s / 2, -s, s, s * .26);
+  c.fillStyle = '#b77bf2'; circ(c, -s * .3, -s * .2, s * .09); c.fill(); c.restore();
+  for (const sx of [-.17, .17]) { c.fillStyle = '#fff'; ell(c, sx * s, -s * .56, s * .12, s * .14); c.fill(); c.fillStyle = '#2d1b3d'; ell(c, sx * s + s * .02, -s * .54, s * .075, s * .09); c.fill(); }
+  c.strokeStyle = '#3b2550'; c.lineWidth = s * .04; c.beginPath(); c.arc(-s * .045, -s * .37, s * .045, 0, Math.PI); c.arc(s * .045, -s * .37, s * .045, 0, Math.PI); c.stroke();
+}
+const ICON = {
+  hoe: { s: 1.15, ox: -.18, oy: .15, r: .55 }, rake: { s: .85, ox: -.12, oy: .27, r: .45 },
+  shovel: { s: 1.15, ox: -.11, oy: .2, r: .5 }, seeds: { s: 1.8, ox: -.01, oy: -.16, r: 0 },
+  water: { s: 1.4, ox: -.2, oy: -.2, r: 0 }, zap: { s: 1.45, ox: -.23, oy: .02, r: 0 }
+};
+function paintIcon(g, type) {
+  if (type === 'daisy' || type === 'pick') { drawDaisyHead(g, 23, 23, 17, '#ffffff', true); return; }
+  if (type === 'cube') { g.translate(23, 41); drawCubeIcon(g, 26); return; }
+  const o = ICON[type], sz = 46 * o.s;
+  g.translate(23 + o.ox * sz, 23 + o.oy * sz); g.rotate(o.r); drawTool(g, type, sz);
+}
+function iconCanvas(type, px = 128, frame = null) {
+  const c = document.createElement('canvas'); c.width = c.height = px;
+  const g = c.getContext('2d'); g.scale(px / 46, px / 46);
+  if (frame === 'bubble') {
+    g.fillStyle = 'rgba(255,255,255,.96)'; circ(g, 23, 23, 21); g.fill();
+    g.strokeStyle = '#ffb3d6'; g.lineWidth = 2.4; g.stroke();
+    g.translate(23, 23); g.scale(.74, .74); g.translate(-23, -23);
+  } else if (frame) {
+    g.fillStyle = frame; rr(g, 1.5, 1.5, 43, 43, 12); g.fill();
+    g.translate(23, 23); g.scale(.8, .8); g.translate(-23, -23);
+  }
+  paintIcon(g, type);
+  return c;
+}
+function paintDomIcons() {
+  document.querySelectorAll('canvas[data-icon]').forEach(cnv => {
+    const g = cnv.getContext('2d'); g.setTransform(cnv.width / 46, 0, 0, cnv.width / 46, 0, 0); g.clearRect(0, 0, 46, 46);
+    paintIcon(g, cnv.dataset.icon);
+  });
+}
+// big friendly face for the flower centre: open eyes, a blink frame and a singing frame
+function drawFlowerFace(g, mode) {
+  const ink = '#3b2550';
+  g.fillStyle = 'rgba(255,120,160,.6)'; ell(g, 30, 76, 11, 7); g.fill(); ell(g, 98, 76, 11, 7); g.fill();
+  g.strokeStyle = ink; g.fillStyle = ink; g.lineCap = 'round'; g.lineWidth = 6;
+  if (mode === 'blink') {
+    for (const x of [44, 84]) { g.beginPath(); g.arc(x, 60, 10, Math.PI * 1.15, Math.PI * 1.85); g.stroke(); }
+  } else {
+    for (const x of [44, 84]) {
+      g.fillStyle = ink; ell(g, x, 58, 9, 12); g.fill();
+      g.fillStyle = '#ffffff'; circ(g, x - 3, 53, 4); g.fill(); circ(g, x + 3, 63, 2); g.fill();
+    }
+  }
+  if (mode === 'sing') { g.fillStyle = '#c4466e'; ell(g, 64, 82, 9, 9); g.fill(); g.fillStyle = '#ff9ab8'; ell(g, 64, 86, 5, 3.5); g.fill(); }
+  else { g.strokeStyle = ink; g.lineWidth = 5; g.beginPath(); g.arc(64, 74, 11, Math.PI * .18, Math.PI * .82); g.stroke(); }
+}
+function wingCanvas(col, edge) {
+  return makeCanvas(128, 128, (g) => {
+    for (const [x, y, rx, ry, r] of [[70, 44, 52, 38, .35], [50, 92, 34, 26, -.45]]) {
+      g.fillStyle = col; ell(g, x, y, rx, ry, r); g.fill();
+      g.strokeStyle = edge; g.lineWidth = 6; g.stroke();
+    }
+    g.fillStyle = 'rgba(255,255,255,.85)';
+    circ(g, 88, 36, 9); g.fill(); circ(g, 64, 54, 6); g.fill(); circ(g, 46, 96, 7); g.fill();
+  });
+}
+function makeCanvas(w, h, fn) { const c = document.createElement('canvas'); c.width = w; c.height = h; fn(c.getContext('2d'), w, h); return c; }
+
+/* =========================================================
+   Three.js setup
+   ========================================================= */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+document.getElementById('stage').appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#cfeeff');
+scene.fog = new THREE.Fog('#e6f6ff', 16, 70);
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, .03, 220);
+camera.rotation.order = 'YXZ';
+// The player sits on a little chair at the centre of the garden and never walks (no motion sickness).
+const EYE = 1.0;
+const dolly = new THREE.Group(); scene.add(dolly);
+dolly.add(camera); camera.position.set(0, EYE, 0);
+let yaw = 0, pitch = -.5;
+
+scene.add(new THREE.HemisphereLight('#e6f4ff', '#a8e08c', .62));
+const sunLight = new THREE.DirectionalLight('#fff3dc', .55); sunLight.position.set(-4, 10, 3); scene.add(sunLight);
+
+const gradTex = (() => {
+  const c = makeCanvas(4, 1, (g) => ['#9a9a9a', '#cfcfcf', '#f2f2f2', '#ffffff'].forEach((col, i) => { g.fillStyle = col; g.fillRect(i, 0, 1, 1); }));
+  const t = new THREE.CanvasTexture(c); t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; return t;
+})();
+const matCache = {};
+function toon(color) { return matCache[color] || (matCache[color] = new THREE.MeshToonMaterial({ color, gradientMap: gradTex })); }
+function toonNew(color) { return new THREE.MeshToonMaterial({ color, gradientMap: gradTex }); }
+function basic(color) { return new THREE.MeshBasicMaterial({ color }); }
+const SPH = new THREE.SphereGeometry(1, 16, 12);
+const SPH_LO = new THREE.SphereGeometry(1, 8, 6);
+function mesh(geo, mat, x = 0, y = 0, z = 0, sx = 1, sy = sx, sz = sx) {
+  const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.scale.set(sx, sy, sz); return m;
+}
+function roundedBox(w, h, d, r, seg = 4) {
+  const g = new THREE.BoxGeometry(w, h, d, seg, seg, seg);
+  const pos = g.attributes.position, nor = g.attributes.normal;
+  const hw = w / 2 - r, hh = h / 2 - r, hd = d / 2 - r;
+  const v = new THREE.Vector3(), inner = new THREE.Vector3(), n = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    inner.set(clamp(v.x, -hw, hw), clamp(v.y, -hh, hh), clamp(v.z, -hd, hd));
+    n.copy(v).sub(inner);
+    if (n.lengthSq() < 1e-10) n.fromBufferAttribute(nor, i);
+    n.normalize(); v.copy(inner).addScaledVector(n, r);
+    pos.setXYZ(i, v.x, v.y, v.z); nor.setXYZ(i, n.x, n.y, n.z);
+  }
+  pos.needsUpdate = true; nor.needsUpdate = true; return g;
+}
+function canvasTex(c) { const t = new THREE.CanvasTexture(c); t.anisotropy = 4; return t; }
+
+/* ---------- textures ---------- */
+const TEX = {
+  soft: canvasTex(makeCanvas(64, 64, (g) => { const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); })),
+  glow: canvasTex(makeCanvas(64, 64, (g) => { const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, 'rgba(255,255,240,1)'); r.addColorStop(.3, 'rgba(255,240,110,.9)'); r.addColorStop(1, 'rgba(150,240,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); })),
+  dot: canvasTex(makeCanvas(32, 32, (g) => { g.fillStyle = '#fff'; circ(g, 16, 16, 14); g.fill(); })),
+  star: canvasTex(makeCanvas(64, 64, (g) => { g.fillStyle = '#fff'; starPath(g, 32, 34, 28, 5, .5); g.fill(); })),
+  spark: canvasTex(makeCanvas(64, 64, (g) => { g.fillStyle = '#fff'; starPath(g, 32, 32, 30, 4, .3); g.fill(); })),
+  heart: canvasTex(makeCanvas(64, 64, (g) => { g.fillStyle = '#fff'; heartPath(g, 32, 38, 30); g.fill(); })),
+  petal: canvasTex(makeCanvas(64, 32, (g) => { g.fillStyle = '#fff'; ell(g, 32, 16, 28, 11); g.fill(); g.strokeStyle = 'rgba(200,170,190,.6)'; g.lineWidth = 2; g.stroke(); })),
+  drop: canvasTex(makeCanvas(32, 48, (g) => { g.fillStyle = '#fff'; g.beginPath(); g.moveTo(16, 2); g.quadraticCurveTo(30, 26, 28, 32); g.arc(16, 32, 12, 0, Math.PI); g.quadraticCurveTo(2, 26, 16, 2); g.fill(); })),
+  square: canvasTex(makeCanvas(32, 32, (g) => { g.fillStyle = '#fff'; rr(g, 3, 3, 26, 26, 7); g.fill(); })),
+  shadow: canvasTex(makeCanvas(64, 64, (g) => { const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, 'rgba(40,90,30,.45)'); r.addColorStop(.7, 'rgba(40,90,30,.25)'); r.addColorStop(1, 'rgba(40,90,30,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); })),
+  face: canvasTex(makeCanvas(128, 128, (g) => drawFlowerFace(g, 'open'))),
+  faceBlink: canvasTex(makeCanvas(128, 128, (g) => drawFlowerFace(g, 'blink'))),
+  faceSing: canvasTex(makeCanvas(128, 128, (g) => drawFlowerFace(g, 'sing'))),
+  daisy: canvasTex(makeCanvas(128, 128, (g) => drawDaisyHead(g, 64, 64, 56, '#ffffff', true))),
+  wing: canvasTex(makeCanvas(64, 64, (g) => { g.fillStyle = '#fff'; ell(g, 34, 22, 26, 20, .3); g.fill(); ell(g, 24, 46, 18, 14, -.4); g.fill(); g.fillStyle = 'rgba(255,255,255,.0)'; })),
+  sun: canvasTex(makeCanvas(256, 256, (g) => {
+    const cx = 128, cy = 128, sr = 70;
+    g.fillStyle = '#ffe58a';
+    for (let i = 0; i < 10; i++) { g.save(); g.translate(cx, cy); g.rotate(i * TAU / 10); rr(g, -9, -sr * 1.75, 18, 32, 9); g.fill(); g.restore(); }
+    g.fillStyle = 'rgba(255,240,170,.6)'; circ(g, cx, cy, sr * 1.2); g.fill();
+    g.fillStyle = '#ffd23f'; circ(g, cx, cy, sr); g.fill();
+    g.strokeStyle = '#b8711f'; g.lineWidth = 6; g.lineCap = 'round';
+    g.beginPath(); g.arc(cx - 23, cy - 4, 10, Math.PI * 1.1, Math.PI * 1.9); g.stroke();
+    g.beginPath(); g.arc(cx + 23, cy - 4, 10, Math.PI * 1.1, Math.PI * 1.9); g.stroke();
+    g.beginPath(); g.arc(cx, cy + 10, 16, Math.PI * .15, Math.PI * .85); g.stroke();
+    g.fillStyle = 'rgba(255,130,120,.5)'; ell(g, cx - 40, cy + 14, 11, 7); g.fill(); ell(g, cx + 40, cy + 14, 11, 7); g.fill();
+  }))
+};
+const NEEDS = ['hoe', 'rake', 'shovel', 'seeds', 'water', 'pick'];
+const BUBBLE = {}; NEEDS.forEach(t => BUBBLE[t] = canvasTex(iconCanvas(t, 128, 'bubble')));
+
+/* =========================================================
+   World: sky, ground, scenery
+   ========================================================= */
+{
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(120, 32, 16), new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false,
+    uniforms: { top: { value: new THREE.Color('#78c4ff') }, mid: { value: new THREE.Color('#bfe6ff') }, hor: { value: new THREE.Color('#fff0e8') } },
+    vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: 'uniform vec3 top; uniform vec3 mid; uniform vec3 hor; varying vec3 vP; void main(){ float h = vP.y; vec3 c = mix(hor, mid, smoothstep(0.0, 0.18, h)); c = mix(c, top, smoothstep(0.18, 0.85, h)); gl_FragColor = vec4(c, 1.0); }'
+  }));
+  sky.renderOrder = -10; scene.add(sky);
+  const sun = new THREE.Sprite(new THREE.SpriteMaterial({ map: TEX.sun, fog: false, depthWrite: false, transparent: true }));
+  sun.position.set(-26, 30, -60); sun.scale.set(16, 16, 1); scene.add(sun);
+}
+const ground = mesh(new THREE.CircleGeometry(90, 48), toon('#94dc77')); ground.rotation.x = -Math.PI / 2; scene.add(ground);
+const GARDEN = new THREE.Vector3(0, 0, 0);
+// plots sit in two arcs in front of the chair; this marks where they are so grass and flowers keep clear
+function inGardenBed(x, z) { const r = Math.hypot(x, z), a = Math.atan2(x, -z); return r < .75 || (r > 1.15 && r < 3.45 && Math.abs(a) < 1.55); }
+{
+  // hills
+  [[-40, -55, 26, '#b4eba3'], [10, -70, 34, '#a6e695'], [48, -45, 24, '#b4eba3'], [-62, -10, 22, '#a6e695'], [62, 5, 26, '#b4eba3'], [0, 55, 30, '#a6e695']]
+    .forEach(([x, z, r, c]) => scene.add(mesh(SPH, toon(c), x, -r * .62, z, r, r * .9, r)));
+  // trees beyond the fence
+  [[-6.5, -9, 1.2, 0], [-10, -4, 1.4, 0], [9, -8.5, 1.3, 1], [11, -2, 1.1, 0], [3.5, -12, 1.5, 0], [-12, 3, 1.3, 1], [12.5, 4.5, 1.2, 0]]
+    .forEach(([x, z, r, blossom]) => {
+      scene.add(mesh(new THREE.CylinderGeometry(.13 * r, .18 * r, 1.6 * r, 8), toon('#b07a4a'), x, .8 * r, z));
+      scene.add(mesh(SPH, toon(blossom ? '#ffc4de' : '#7fd174'), x, 2.1 * r, z, r * 1.1));
+      scene.add(mesh(SPH, toon(blossom ? '#ffe0ee' : '#a3e394'), x - .35 * r, 2.5 * r, z + .45 * r, r * .5));
+    });
+  // picket fence around the garden
+  const R = 5.6, N = 80;
+  const picket = new THREE.InstancedMesh(roundedBox(.09, .62, .035, .02, 2), toon('#ffffff'), N);
+  const o = new THREE.Object3D();
+  for (let i = 0; i < N; i++) {
+    const a = i / N * TAU; o.position.set(GARDEN.x + Math.cos(a) * R, .31, GARDEN.z + Math.sin(a) * R); o.rotation.set(0, -a + Math.PI / 2, 0); o.updateMatrix(); picket.setMatrixAt(i, o.matrix);
+  }
+  scene.add(picket);
+  for (const h of [.2, .45]) { const rail = mesh(new THREE.TorusGeometry(R, .025, 6, 120), toon('#f6eef8'), GARDEN.x, h, GARDEN.z); rail.rotation.x = Math.PI / 2; scene.add(rail); }
+  // grass tufts and tiny ground flowers
+  const tufts = new THREE.InstancedMesh(new THREE.ConeGeometry(.03, .13, 4), toon('#6cc45a'), 900);
+  let k = 0;
+  while (k < 900) {
+    const a = rand(0, TAU), r = Math.sqrt(Math.random()) * 20, x = GARDEN.x + Math.cos(a) * r, z = GARDEN.z + Math.sin(a) * r;
+    if (inGardenBed(x, z)) continue;
+    o.position.set(x, .05, z); o.rotation.set(rand(-.2, .2), rand(0, 3), rand(-.2, .2)); o.scale.setScalar(rand(.7, 1.4)); o.updateMatrix(); tufts.setMatrixAt(k++, o.matrix);
+  }
+  scene.add(tufts);
+  const fl = new THREE.InstancedMesh(SPH_LO, toon('#ffffff'), 260), col = new THREE.Color();
+  k = 0;
+  while (k < 260) {
+    const a = rand(0, TAU), r = Math.sqrt(Math.random()) * 16, x = GARDEN.x + Math.cos(a) * r, z = GARDEN.z + Math.sin(a) * r;
+    if (inGardenBed(x, z)) continue;
+    o.position.set(x, .02, z); o.rotation.set(0, 0, 0); o.scale.set(.035, .015, .035); o.updateMatrix(); fl.setMatrixAt(k, o.matrix);
+    fl.setColorAt(k++, col.set(pick(['#ffffff', '#ffffff', '#ffd3e8', '#fff1a6', '#e8dcff'])));
+  }
+  scene.add(fl);
+}
+// clouds drifting very slowly around the sky
+const cloudRing = new THREE.Group(); scene.add(cloudRing);
+{
+  const cm = new THREE.MeshLambertMaterial({ color: '#ffffff', emissive: '#dceefc', emissiveIntensity: .55 });
+  for (let i = 0; i < 9; i++) {
+    const a = i / 9 * TAU + rand(-.2, .2), r = rand(32, 50), g = new THREE.Group();
+    g.position.set(Math.cos(a) * r, rand(14, 22), Math.sin(a) * r);
+    const s = rand(2.2, 3.4);
+    [[0, 0, 0, 1], [1.1, -.25, .2, .8], [-1.1, -.3, 0, .75], [.3, .5, -.2, .8], [-.4, .3, .4, .6]].forEach(([x, y, z, k]) => g.add(mesh(SPH, cm, x * s, y * s, z * s, k * s, k * s * .85, k * s)));
+    g.lookAt(0, g.position.y, 0); cloudRing.add(g);
+  }
+}
+// the counter sign at the back of the garden
+const signCanvas = document.createElement('canvas'); signCanvas.width = 512; signCanvas.height = 200;
+const signTex = canvasTex(signCanvas);
+const sign = new THREE.Group(); sign.position.set(0, 0, -4.35); scene.add(sign);
+{
+  for (const x of [-.65, .65]) sign.add(mesh(new THREE.CylinderGeometry(.05, .05, 1.2, 8), toon('#b07a4a'), x, .6, -.02));
+  sign.add(mesh(roundedBox(1.7, .68, .07, .03, 3), toon('#f2c891'), 0, 1.18, 0));
+  const face = mesh(new THREE.PlaneGeometry(1.6, .625), new THREE.MeshBasicMaterial({ map: signTex, transparent: true }), 0, 1.18, .037);
+  sign.add(face);
+}
+const SIGN_TARGET = new THREE.Vector3(-.4, 1.18, -4.3);
+
+/* =========================================================
+   Garden plots
+   ========================================================= */
+const PETALS = ['#ffffff', '#ffffff', '#ffffff', '#ffd3e8', '#e8dcff', '#fff1a6'];
+const NEXT = { grass: 'hoe', plowed: 'rake', fluffy: 'shovel', hole: 'seeds' };
+const HT = [.03, .14, .27, .4, .52];
+const GROW = 6.5, DRY = 13, BITE = 3.4;
+// inner arc of 5 plots and outer arc of 7, all facing the chair
+const PLOT_LAYOUT = [
+  ...[-72, -36, 0, 36, 72].map(d => [1.72, d]),
+  ...[-78, -52, -26, 0, 26, 52, 78].map(d => [2.85, d])
+].map(([r, d]) => { const a = d * Math.PI / 180; return { x: Math.sin(a) * r, z: -Math.cos(a) * r, a }; });
+const plotGeo = roundedBox(1, .16, .8, .07, 5);
+const C_GRASS = new THREE.Color('#8edc70'), C_PLOW = new THREE.Color('#a66a43'), C_SOIL = new THREE.Color('#b97c4f'), C_WET = new THREE.Color('#6b3f24');
+const leafGeo = new THREE.SphereGeometry(1, 10, 6), stemGeo = new THREE.CylinderGeometry(.011, .016, 1, 6); stemGeo.translate(0, .5, 0);
+const hitboxes = [];
+
+function neededTool(p) { return p.state === 'plant' ? (p.stage >= 4 ? 'pick' : 'water') : NEXT[p.state]; }
+
+function buildPlot(p) {
+  const root = new THREE.Group(); root.position.set(p.x, 0, p.z); root.rotation.y = -p.a; scene.add(root);
+  const baseMat = toonNew('#8edc70');
+  root.add(mesh(plotGeo, baseMat));
+  const grassG = new THREE.Group(); root.add(grassG);
+  for (let i = 0; i < 9; i++) grassG.add(mesh(new THREE.ConeGeometry(.022, .09, 5), toon('#5bb54b'), rand(-.4, .4), .12, rand(-.3, .3)));
+  const cl = [rand(-.3, .3), rand(-.25, .25)];
+  for (let i = 0; i < 5; i++) { const a = i / 5 * TAU; grassG.add(mesh(SPH_LO, toon('#ffffff'), cl[0] + Math.cos(a) * .022, .085, cl[1] + Math.sin(a) * .022, .018, .008, .018)); }
+  grassG.add(mesh(SPH_LO, toon('#ffd23f'), cl[0], .09, cl[1], .014, .008, .014));
+  const ridgesG = new THREE.Group(); root.add(ridgesG);
+  for (const z of [-.24, 0, .24]) { const r = mesh(new THREE.CylinderGeometry(.045, .045, .82, 8), toon('#8a5532'), 0, .075, z); r.rotation.z = Math.PI / 2; ridgesG.add(r); }
+  const bumpsG = new THREE.Group(); root.add(bumpsG);
+  for (let i = 0; i < 14; i++) bumpsG.add(mesh(SPH_LO, toon(pick(['#cf9566', '#c48a5c', '#9a6038'])), rand(-.4, .4), .078, rand(-.3, .3), rand(.025, .045), rand(.015, .03), rand(.025, .045)));
+  const holeG = new THREE.Group(); root.add(holeG);
+  const rim = mesh(new THREE.TorusGeometry(.14, .035, 6, 20), toon('#d9a273'), 0, .085, 0); rim.rotation.x = Math.PI / 2; holeG.add(rim);
+  holeG.add(mesh(new THREE.CylinderGeometry(.13, .13, .012, 20), basic('#4a2a1a'), 0, .087, 0));
+  const moundG = mesh(SPH, toon('#a2673f'), 0, .08, 0, .15, .05, .13); root.add(moundG);
+  // plant
+  const plant = new THREE.Group(); plant.position.y = .1; root.add(plant);
+  const seed = mesh(SPH_LO, toon('#8a5a32'), 0, .01, 0, .028, .02, .022); plant.add(seed);
+  const stem = mesh(stemGeo, toon('#47a94a')); plant.add(stem);
+  const leafPivots = [];
+  for (let i = 0; i < 6; i++) {
+    const pv = new THREE.Group(); const lf = mesh(leafGeo, toon('#6ed36a'), .06, 0, 0, .065, .012, .03); pv.add(lf); plant.add(pv);
+    pv.rotation.y = i < 2 ? i * Math.PI : i * 2.1 + .4; pv.rotation.z = .5; leafPivots.push(pv);
+  }
+  const bud = new THREE.Group(); plant.add(bud);
+  bud.add(mesh(SPH, toon('#5cc25c'), 0, 0, 0, .045));
+  const tipMat = toonNew(p.color);
+  const tips = []; for (let i = -1; i <= 1; i++) { const t = mesh(SPH_LO, tipMat, i * .022, .035, .01, .016, .035, .016); t.rotation.z = -i * .45; bud.add(t); tips.push(t); }
+  const head = new THREE.Group(); plant.add(head);
+  const headInner = new THREE.Group(); head.add(headInner);
+  const petalMat = toonNew(p.color);
+  for (let i = 0; i < 12; i++) { const a = i / 12 * TAU; const pt = mesh(SPH, petalMat, Math.cos(a) * .082, Math.sin(a) * .082, 0, .056, .021, .009); pt.rotation.z = a; headInner.add(pt); }
+  const disc = mesh(new THREE.CylinderGeometry(.05, .05, .022, 18), toon('#ffd23f')); disc.rotation.x = Math.PI / 2; headInner.add(disc);
+  const back = mesh(new THREE.CylinderGeometry(.04, .03, .02, 12), toon('#4caf50'), 0, 0, -.018); back.rotation.x = Math.PI / 2; headInner.add(back);
+  const faceMat = new THREE.MeshBasicMaterial({ map: TEX.face, transparent: true, depthWrite: false });
+  headInner.add(mesh(new THREE.PlaneGeometry(.1, .1), faceMat, 0, 0, .0115));
+  // hit area and hint bubble
+  // hit areas: a low box over the soil, plus a column around the plant that only counts while something grows
+  const hit = mesh(new THREE.BoxGeometry(1, .26, .86), basic('#ffffff'), p.x, .1, p.z); hit.rotation.y = -p.a; hit.visible = false; hit.userData.plot = p; scene.add(hit); hitboxes.push(hit);
+  const plantHit = mesh(new THREE.BoxGeometry(.42, 1, .42), basic('#ffffff'), p.x, .5, p.z); plantHit.visible = false; plantHit.userData.plot = p; scene.add(plantHit);
+  const bubble = new THREE.Sprite(new THREE.SpriteMaterial({ map: BUBBLE.hoe, transparent: true, depthWrite: false })); bubble.scale.set(.2, .2, 1); scene.add(bubble);
+  p.o = { root, baseMat, grassG, ridgesG, bumpsG, holeG, moundG, plant, seed, stem, leafPivots, bud, tips, tipMat, head, headInner, petalMat, faceMat, bubble, hit, plantHit };
+  p.blinkT = rand(1, 4); p.singT = rand(4, 12);
+  refreshPlot(p);
+}
+function refreshPlot(p) {
+  const o = p.o, s = p.state;
+  o.grassG.visible = s === 'grass'; o.ridgesG.visible = s === 'plowed';
+  o.bumpsG.visible = s === 'fluffy' || s === 'hole' || s === 'plant';
+  o.holeG.visible = s === 'hole'; o.moundG.visible = s === 'plant'; o.plant.visible = s === 'plant';
+  o.petalMat.color.set(p.color); o.tipMat.color.set(p.color);
+}
+function plantHeight(p) { return p.stage >= 4 ? HT[4] : lerp(HT[p.stage], HT[p.stage + 1], easeOut(p.g)); }
+const camPos = new THREE.Vector3();
+function updatePlotVisual(p, dt) {
+  const o = p.o;
+  // soil colour (wet soil darkens)
+  if (p.state === 'grass') o.baseMat.color.copy(C_GRASS);
+  else if (p.state === 'plowed') o.baseMat.color.copy(C_PLOW);
+  else { o.baseMat.color.copy(C_SOIL); if (p.state === 'plant') o.baseMat.color.lerp(C_WET, p.water * .55); }
+  const wob = p.wob > 0 ? Math.sin(p.wob * 22) * p.wob * .05 : 0;
+  o.root.position.y = p.wob > 0 && p.state !== 'plant' ? Math.abs(Math.sin(p.wob * 12)) * p.wob * .03 : 0;
+  if (p.state === 'plant') {
+    const st = p.stage, g = p.g, h = plantHeight(p);
+    const tiny = st === 0 && g < .45;
+    o.seed.visible = tiny;
+    o.stem.visible = !tiny; o.stem.scale.y = tiny ? .01 : h;
+    // bloomed daisies dance in time with the music box (one sway every four notes); younger plants just sway
+    const bloom = st >= 4, beat = T * TAU / 1.76 + p.phase * .25;
+    if (bloom) { o.plant.rotation.z = Math.sin(beat) * .13 + wob; o.plant.rotation.x = Math.sin(beat * .5 + p.phase) * .05; }
+    else { o.plant.rotation.z = Math.sin(T * 1.6 + p.phase) * .07 * (h / HT[4]) + wob; o.plant.rotation.x = Math.sin(T * 1.1 + p.phase) * .03; }
+    // leaves: two seed leaves at the tip while small, then pairs along the stem
+    const growK = st >= 4 ? 1 : (st + g) / 4;
+    o.leafPivots.forEach((pv, i) => {
+      let vis = false, y = 0, s = 1;
+      if (tiny) vis = false;
+      else if (st <= 1) { vis = i < 2; y = h; s = .45 + .4 * (st + g) / 2; }
+      else { vis = i >= 2 && (i < 4 || st >= 3 || growK > .6); y = h * [0, 0, .3, .42, .62, .72][i]; s = .8 + .5 * growK; }
+      pv.visible = vis; pv.position.y = y; pv.scale.setScalar(s);
+      pv.rotation.z = bloom && i >= 2 ? .5 + Math.sin(beat * 2 + i) * .28 : .5;
+    });
+    o.bud.visible = st === 3; o.bud.position.y = h;
+    if (st === 3) o.tips.forEach(t => { t.scale.y = .02 + .03 * g; });
+    o.head.visible = st >= 4; o.head.position.y = h + (bloom ? Math.abs(Math.sin(beat)) * .018 : 0);
+    if (st >= 4) {
+      let sc = 1;
+      if (p.pop > 0) { const k = 1 - p.pop; sc = clamp(k * 3, .2, 1) * (1 + Math.sin(k * Math.PI) * .35 * (1 - k)); }
+      o.head.scale.setScalar(sc * 1.25);
+      o.head.lookAt(camPos.x, camPos.y + .4, camPos.z);
+      o.headInner.rotation.z = -Math.sin(beat) * .22;
+      // blink now and then, and sometimes hum along with the music
+      p.blinkT -= dt; if (p.blinkT < -.14) p.blinkT = rand(2, 5);
+      p.singT -= dt; if (p.singT < -2) p.singT = rand(6, 14);
+      const face = p.blinkT < 0 ? TEX.faceBlink : p.singT < 0 && Math.sin(beat * 2) > 0 ? TEX.faceSing : TEX.face;
+      if (o.faceMat.map !== face) { o.faceMat.map = face; o.faceMat.needsUpdate = true; }
+    }
+  }
+  // hint bubble: shows the tool this plot needs next
+  const need = neededTool(p);
+  // nothing to do while a plant drinks; open flowers only show the 'pick me' bubble when aimed at
+  const show = started && !(p.state === 'plant' && p.stage < 4 && p.water > 0) && (need !== 'pick' || hoverPlot === p);
+  o.bubble.visible = show;
+  if (show) {
+    if (o.bubble.material.map !== BUBBLE[need]) { o.bubble.material.map = BUBBLE[need]; o.bubble.material.needsUpdate = true; }
+    const top = p.state === 'plant' ? plantHeight(p) + .1 + (p.stage >= 4 ? .14 : 0) : .1;
+    const match = need === tool || need === 'pick', hov = hoverPlot === p;
+    const target = hov ? .32 : match ? .26 : .18;
+    p.bs = lerp(p.bs || .16, target, Math.min(1, dt * 8));
+    o.bubble.scale.set(p.bs, p.bs, 1);
+    o.bubble.material.opacity = match || hov ? 1 : .7;
+    o.bubble.position.set(p.x + Math.cos(p.a) * .18, top + .32 + Math.sin(T * 3 + p.i) * .025, p.z + Math.sin(p.a) * .18);
+  }
+}
+
+const plots = [];
+for (const L of PLOT_LAYOUT) {
+  const p = { i: plots.length, x: L.x, z: L.z, a: L.a, state: 'grass', stage: 0, g: 0, water: 0, color: pick(PETALS), wob: 0, pop: 0, phase: rand(0, 6), bs: .16 };
+  plots.push(p); buildPlot(p);
+}
+const highlight = new THREE.Group(); highlight.visible = false; scene.add(highlight);
+const highlightRing = mesh(new THREE.TorusGeometry(.5, .022, 6, 48), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: .8 }));
+highlightRing.rotation.x = -Math.PI / 2; highlightRing.scale.set(1.06, .9, 1); highlight.add(highlightRing);
+// the little chair the player sits on, with her shoes peeking out in front
+{
+  const chair = new THREE.Group(); scene.add(chair);
+  chair.add(mesh(roundedBox(.48, .07, .44, .03, 3), toon('#ff9ac8'), 0, .36, .05));
+  chair.add(mesh(roundedBox(.42, .05, .38, .025, 3), toon('#ffd8ea'), 0, .41, .05));
+  chair.add(mesh(roundedBox(.48, .4, .06, .03, 3), toon('#ff9ac8'), 0, .62, .27));
+  for (const [x, z] of [[-.2, -.13], [.2, -.13], [-.2, .23], [.2, .23]]) chair.add(mesh(new THREE.CylinderGeometry(.022, .018, .34, 8), toon('#ffffff'), x, .17, z));
+  const heart = new THREE.Sprite(new THREE.SpriteMaterial({ map: TEX.heart, color: '#ff6fae', transparent: true })); heart.position.set(0, .66, .305); heart.scale.set(.16, .16, 1); chair.add(heart);
+  chair.add(mesh(SPH, toon('#ff7eb6'), 0, .45, -.12, .2, .06, .14));
+  for (const x of [-.08, .08]) {
+    chair.add(mesh(new THREE.CylinderGeometry(.03, .028, .34, 8), toon('#ffdcc8'), x, .24, -.2));
+    chair.add(mesh(SPH, toon('#9b63e8'), x, .05, -.25, .045, .035, .07));
+  }
+}
+
+/* =========================================================
+   Hands, tools and the zapper
+   ========================================================= */
+function buildHand(parent) {
+  parent.add(mesh(SPH, toon('#ffdcc8'), 0, -.005, .01, .042, .038, .05));
+  const cuff = mesh(new THREE.CylinderGeometry(.045, .05, .06, 14), toon('#ff7eb6'), 0, -.005, .075); cuff.rotation.x = Math.PI / 2; parent.add(cuff);
+  const frill = mesh(new THREE.TorusGeometry(.046, .012, 6, 16), toon('#ffffff'), 0, -.005, .045); parent.add(frill);
+}
+function buildTools() {
+  const T3 = {};
+  const wood = toon('#c08a5a'), pink = toon('#ff8fc8'), metal = toon('#b4c6d6'), pinkDeep = toon('#e0579a');
+  { // hoe: handle along -Z, blade hanging down at the tip
+    const g = new THREE.Group();
+    const h = mesh(new THREE.CylinderGeometry(.014, .014, .62, 8), wood, 0, 0, -.16); h.rotation.x = Math.PI / 2; g.add(h);
+    g.add(mesh(roundedBox(.17, .11, .025, .01, 2), toon('#a9bdd0'), 0, -.05, -.46));
+    g.add(mesh(SPH, pink, 0, 0, .15, .024));
+    T3.hoe = g;
+  }
+  { // fan rake in pink plastic
+    const g = new THREE.Group();
+    const h = mesh(new THREE.CylinderGeometry(.014, .014, .55, 8), wood, 0, 0, -.13); h.rotation.x = Math.PI / 2; g.add(h);
+    for (let i = -3; i <= 3; i++) {
+      const tine = new THREE.Group(); tine.position.set(0, 0, -.4); tine.rotation.y = i * .17;
+      tine.add(mesh(new THREE.BoxGeometry(.012, .008, .2), pink, 0, 0, -.1));
+      tine.add(mesh(new THREE.BoxGeometry(.012, .035, .01), pinkDeep, 0, -.017, -.2));
+      g.add(tine);
+    }
+    const bar = mesh(new THREE.CylinderGeometry(.008, .008, .2, 6), pinkDeep, 0, 0, -.5); bar.rotation.z = Math.PI / 2; g.add(bar);
+    T3.rake = g;
+  }
+  { // trowel
+    const g = new THREE.Group();
+    const h = mesh(new THREE.CylinderGeometry(.022, .022, .12, 10), pink, 0, 0, 0); h.rotation.x = Math.PI / 2; g.add(h);
+    const n = mesh(new THREE.CylinderGeometry(.007, .007, .06, 6), toon('#8fa3b6'), 0, 0, -.09); n.rotation.x = Math.PI / 2; g.add(n);
+    const b = mesh(SPH, metal, 0, -.005, -.19, .06, .014, .1); b.rotation.x = .15; g.add(b);
+    T3.shovel = g;
+  }
+  { // seed bag
+    const g = new THREE.Group();
+    g.add(mesh(SPH, toon('#f0d39e'), 0, -.085, -.03, .07, .085, .06));
+    g.add(mesh(new THREE.CylinderGeometry(.025, .035, .04, 10), toon('#d9b679'), 0, -.01, -.03));
+    const tie = mesh(new THREE.TorusGeometry(.03, .007, 6, 14), pinkDeep, 0, -.02, -.03); tie.rotation.x = Math.PI / 2; g.add(tie);
+    g.add(mesh(new THREE.PlaneGeometry(.07, .07), new THREE.MeshBasicMaterial({ map: TEX.daisy, transparent: true }), 0, -.085, .032));
+    T3.seeds = g;
+  }
+  { // watering can
+    const g = new THREE.Group();
+    const blue = toon('#86d3ff');
+    g.add(mesh(new THREE.CylinderGeometry(.065, .07, .12, 16), blue, 0, -.09, -.06));
+    g.add(mesh(new THREE.CylinderGeometry(.066, .066, .015, 16), toon('#b8e6ff'), 0, -.025, -.06));
+    const sp = new THREE.Group(); sp.position.set(0, -.11, -.12); sp.rotation.x = -1.0; g.add(sp);
+    sp.add(mesh(new THREE.CylinderGeometry(.012, .016, .17, 8), blue, 0, .085, 0));
+    sp.add(mesh(new THREE.CylinderGeometry(.03, .014, .03, 10), toon('#4fb1ec'), 0, .18, 0));
+    const tip = new THREE.Object3D(); tip.position.set(0, .2, 0); sp.add(tip); g.userData.tip = tip;
+    const hd = mesh(new THREE.TorusGeometry(.05, .011, 6, 14, Math.PI), blue, 0, -.03, -.03); hd.rotation.y = Math.PI / 2; g.add(hd);
+    for (const sx of [-1, 1]) { const hp = mesh(new THREE.PlaneGeometry(.05, .05), new THREE.MeshBasicMaterial({ map: TEX.heart, color: '#ff7eb6', transparent: true }), sx * .071, -.09, -.06); hp.rotation.y = sx * Math.PI / 2; g.add(hp); }
+    T3.water = g;
+  }
+  return T3;
+}
+function buildZapper() {
+  const g = new THREE.Group();
+  const grip = mesh(roundedBox(.032, .09, .04, .012, 2), toon('#9b63e8'), 0, -.035, .01); grip.rotation.x = -.3; g.add(grip);
+  g.add(mesh(SPH, toon('#c9a3ff'), 0, .025, -.04, .045, .042, .085));
+  const barrel = mesh(new THREE.CylinderGeometry(.02, .022, .1, 12), toon('#ff8fc8'), 0, .025, -.15); barrel.rotation.x = Math.PI / 2; g.add(barrel);
+  for (const z of [-.13, -.17]) { const ring = mesh(new THREE.TorusGeometry(.022, .006, 6, 14), toon('#e0579a'), 0, .025, z); g.add(ring); }
+  const fin = mesh(new THREE.ConeGeometry(.018, .045, 4), toon('#7ee6c4'), 0, .075, -.04); g.add(fin);
+  const orb = mesh(SPH, basic('#fff36b'), 0, .025, -.21, .028); g.add(orb);
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: TEX.glow, color: '#fff36b', transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); glow.scale.set(.11, .11, 1); orb.add(glow); glow.scale.set(4, 4, 1);
+  g.userData.orb = orb; g.userData.glow = glow;
+  return g;
+}
+const toolRig = new THREE.Group(), toolSwing = new THREE.Group(); toolRig.add(toolSwing);
+buildHand(toolSwing);
+const TOOLS3 = buildTools(); Object.values(TOOLS3).forEach(m => toolSwing.add(m));
+const zapRig = new THREE.Group(), zapSwing = new THREE.Group(); zapRig.add(zapSwing);
+buildHand(zapSwing);
+const zapper = buildZapper(); zapSwing.add(zapper);
+// wrist tool palette (only in VR)
+const palette = new THREE.Group(); palette.position.set(0, .075, .1); palette.rotation.x = -1.05; palette.visible = false; zapRig.add(palette);
+const paletteBtns = [];
+['hoe', 'rake', 'shovel', 'seeds', 'water'].forEach((t, i) => {
+  const btn = mesh(new THREE.PlaneGeometry(.048, .048), new THREE.MeshBasicMaterial({ map: canvasTex(iconCanvas(t, 128, '#fffaf2')), transparent: true }), (i - 2) * .054, 0, 0);
+  btn.userData.tool = t; palette.add(btn); paletteBtns.push(btn);
+});
+palette.add(mesh(roundedBox(.29, .066, .008, .004, 2), toon('#ffd8ea'), 0, 0, -.006));
+
+/* =========================================================
+   Particles (sprite pool)
+   ========================================================= */
+const PMAX = 260, PARTS = [];
+for (let i = 0; i < PMAX; i++) {
+  const m = new THREE.SpriteMaterial({ map: TEX.dot, transparent: true, depthWrite: false });
+  const s = new THREE.Sprite(m); s.visible = false; scene.add(s);
+  PARTS.push({ s, m, life: 0, max: 1, v: new THREE.Vector3(), g: 0, size: .04, spin: 0, grow: 0, drag: 0 });
+}
+let pIdx = 0;
+function emit(tex, pos, vel, o = {}) {
+  const p = PARTS[pIdx]; pIdx = (pIdx + 1) % PMAX;
+  p.m.map = TEX[tex]; p.m.color.set(o.color || '#ffffff'); p.m.rotation = o.rot ?? rand(0, TAU);
+  p.m.blending = o.add ? THREE.AdditiveBlending : THREE.NormalBlending;
+  p.s.position.copy(pos); p.v.copy(vel); p.life = p.max = o.life || .8; p.g = o.g ?? 0; p.size = o.size || .04;
+  p.spin = o.spin || 0; p.grow = o.grow || 0; p.drag = o.drag || 0; p.aspect = o.aspect || 1; p.s.visible = true;
+  p.s.scale.set(p.size, p.size * p.aspect, 1);
+}
+const _v = new THREE.Vector3();
+function burst(tex, pos, n, colors, speed = 1, size = .04, o = {}) {
+  for (let i = 0; i < n; i++) {
+    _v.set(rand(-1, 1), rand(-.2, 1), rand(-1, 1)).normalize().multiplyScalar(rand(.5, 1.2) * speed);
+    emit(tex, pos, _v, Object.assign({ color: pick(colors), size: size * rand(.7, 1.3), g: -2.5, life: rand(.5, .9), spin: rand(-5, 5) }, o));
+  }
+}
+function dirt(p, n = 10) {
+  for (let i = 0; i < n; i++) emit('dot', _v.set(p.x + rand(-.3, .3), .12, p.z + rand(-.25, .25)), new THREE.Vector3(rand(-.6, .6), rand(.8, 1.8), rand(-.6, .6)), { color: pick(['#8a5532', '#a66a43', '#c48a5c']), size: rand(.025, .045), g: -7, life: .6 });
+}
+function updateParticles(dt) {
+  for (const p of PARTS) {
+    if (p.life <= 0) continue;
+    p.life -= dt;
+    if (p.life <= 0) { p.s.visible = false; continue; }
+    p.v.y += p.g * dt; if (p.drag) p.v.multiplyScalar(1 - p.drag * dt);
+    p.s.position.addScaledVector(p.v, dt);
+    if (p.s.position.y < .02 && p.g < 0) { p.s.position.y = .02; p.v.set(0, 0, 0); }
+    p.m.rotation += p.spin * dt;
+    const k = p.life / p.max, sc = p.size * (1 + p.grow * (1 - k));
+    p.s.scale.set(sc, sc * p.aspect, 1); p.m.opacity = Math.min(1, k * 2.2);
+  }
+}
+
+/* =========================================================
+   Aliens (green & purple jelly cubes)
+   ========================================================= */
+const ALIEN = {
+  green: { main: '#7be36b', dark: '#4fbf4a', spot: '#b77bf2', ant: '#c99bff' },
+  purple: { main: '#b48cff', dark: '#8a5fe0', spot: '#8ced7c', ant: '#9cf08a' }
+};
+const cubeGeo = roundedBox(1, 1, 1, .22, 5);
+let aliens = [], alienHits = [];
+function makeAlien(kind, big) {
+  const s = big ? .46 : .32, col = ALIEN[kind];
+  const root = new THREE.Group();
+  const shadow = mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: TEX.shadow, transparent: true, depthWrite: false }), 0, .012, 0, s * 1.3);
+  shadow.rotation.x = -Math.PI / 2; root.add(shadow);
+  const hop = new THREE.Group(); root.add(hop);
+  const sq = new THREE.Group(); hop.add(sq);
+  const bodyMat = new THREE.MeshToonMaterial({ color: col.main, gradientMap: gradTex, emissive: '#000000' });
+  sq.add(mesh(cubeGeo, bodyMat, 0, s / 2, 0, s));
+  sq.add(mesh(SPH, basic('#ffffff'), -s * .3, s * .92, s * .22, s * .1, s * .04, s * .05));
+  const spotM = toon(col.spot);
+  [[-.5, .3, .1, .09], [.5, .55, -.15, .07], [.2, .45, -.5, .08], [-.25, .2, -.5, .06]].forEach(([x, y, z, r]) => sq.add(mesh(SPH_LO, spotM, x * s * 1.0, y * s, z * s, r * s * (x ? .4 : 1) + .002, r * s, r * s * (z === -.5 ? .4 : 1))));
+  const eyes = [];
+  for (const ex of [-.18, .18]) {
+    const eye = new THREE.Group(); eye.position.set(ex * s, s * .6, s * .5); sq.add(eye);
+    eye.add(mesh(SPH, basic('#ffffff'), 0, 0, 0, s * .13, s * .15, s * .06));
+    const pupil = mesh(SPH, basic('#2d1b3d'), 0, -s * .01, s * .045, s * .08, s * .095, s * .04); eye.add(pupil);
+    eye.add(mesh(SPH_LO, basic('#ffffff'), -s * .03, s * .035, s * .075, s * .028));
+    eyes.push(eye);
+  }
+  for (const bx of [-.33, .33]) sq.add(mesh(SPH_LO, basic('#ff9ccc'), bx * s, s * .4, s * .5, s * .07, s * .04, s * .02));
+  const mouth = mesh(SPH_LO, basic('#5b2a4a'), 0, s * .36, s * .505, s * .06, s * .03, s * .02); sq.add(mouth);
+  const ant = new THREE.Group(); ant.position.y = s * .98; sq.add(ant);
+  ant.add(mesh(new THREE.CylinderGeometry(s * .025, s * .03, s * .3, 6), toon(col.dark), 0, s * .15, 0));
+  const ball = mesh(SPH, basic(col.ant), 0, s * .32, 0, s * .085); ant.add(ball);
+  const zapLines = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(9 * 2 * 3), 3)), new THREE.LineBasicMaterial({ color: '#fff36b' }));
+  zapLines.position.y = s * .5; zapLines.visible = false; sq.add(zapLines);
+  const hit = mesh(SPH_LO, basic('#ffffff'), 0, s * .55, 0, s * 1.1); hit.visible = false; hop.add(hit);
+  return { root, hop, sq, bodyMat, eyes, mouth, ant, zapLines, hit, s, kind };
+}
+function spawnAlien() {
+  const big = zapped >= 8 && Math.random() < .2;
+  const kind = Math.random() < .5 ? 'green' : 'purple';
+  const a = makeAlien(kind, big);
+  const phi = rand(-1.7, 1.7), R = 5.1;
+  a.x = GARDEN.x + Math.sin(phi) * R; a.z = GARDEN.z - Math.cos(phi) * R;
+  Object.assign(a, { hp: big ? 3 : 1, hopT: Math.random(), air: 0, sqv: 0, target: null, eatT: 0, zap: 0, dying: false, gone: false, blink: rand(1, 4), munch: 0, leaving: false, face: 0, phase: rand(0, 6), spawnT: 0 });
+  a.root.position.set(a.x, 0, a.z); a.hit.userData.alien = a;
+  scene.add(a.root); aliens.push(a); alienHits.push(a.hit);
+  sfx('boing');
+}
+function chooseTarget(a) {
+  let best = null, bd = 1e9;
+  for (const p of plots) if (p.state === 'plant') {
+    const busy = aliens.filter(o => o !== a && o.target === p && !o.gone).length;
+    const d = Math.hypot(p.x - a.x, p.z - a.z) - p.stage * .5 + busy * 3;
+    if (d < bd) { bd = d; best = p; }
+  }
+  return best;
+}
+const HOP = .75;
+function updateAlien(a, dt) {
+  a.blink -= dt; if (a.blink < -.12) a.blink = rand(1.5, 4);
+  a.spawnT = Math.min(1, a.spawnT + dt * 2.5);
+  a.eyes.forEach(e => e.scale.y = a.blink < 0 ? .15 : 1);
+  a.ant.rotation.z = Math.sin(T * 5 + a.phase) * .25;
+  if (a.zap > 0) {
+    a.zap -= dt;
+    const flick = ((T * 30) | 0) % 2 === 0;
+    a.bodyMat.emissive.set(flick ? '#fff36b' : '#000000'); a.bodyMat.emissiveIntensity = .7;
+    a.sq.position.set(rand(-1, 1) * a.s * .06, 0, rand(-1, 1) * a.s * .06);
+    a.zapLines.visible = true; zigzag(a.zapLines.geometry.attributes.position, 9, a.s * .45, a.s * .95);
+    a.air = Math.max(0, a.air - dt);
+    if (a.zap <= 0) { a.bodyMat.emissive.set('#000000'); a.zapLines.visible = false; a.sq.position.set(0, 0, 0); if (a.dying) poof(a); }
+    applyAlienTransform(a); return;
+  }
+  if (a.target && a.target.state !== 'plant') a.target = null;
+  if (!a.target && !a.leaving) { a.target = chooseTarget(a); if (!a.target) a.leaving = true; }
+  let tx, tz;
+  if (a.target) { tx = a.target.x + Math.sin(a.target.a) * .5; tz = a.target.z - Math.cos(a.target.a) * .5; }
+  else { const dx = a.x - GARDEN.x, dz = a.z - GARDEN.z, d = Math.hypot(dx, dz) || 1; tx = GARDEN.x + dx / d * 7; tz = GARDEN.z + dz / d * 7; }
+  const dx = tx - a.x, dz = tz - a.z, d = Math.hypot(dx, dz);
+  if (a.target && d < .04) {
+    a.face = Math.atan2(a.target.x - a.x, a.target.z - a.z); a.air = 0;
+    a.munch += dt * 14; a.sqv = Math.abs(Math.sin(a.munch)) * .08;
+    a.mouth.scale.y = a.s * (.02 + .07 * (Math.sin(a.munch) + 1) / 2);
+    a.eatT += dt;
+    if (Math.random() < dt * 6) emit('dot', _v.set(a.x + Math.sin(a.face) * a.s * .5, a.s * .4, a.z + Math.cos(a.face) * a.s * .5), new THREE.Vector3(rand(-.3, .3), rand(.4, .9), rand(-.3, .3)), { color: pick(['#6ed36a', '#4caf50', '#ffffff']), size: .018, g: -5, life: .5 });
+    if (a.eatT >= BITE) {
+      a.eatT = 0; const p = a.target; p.wob = 1; sfx('nom');
+      if (p.stage > 0) { p.stage--; p.g = 0; } else { p.state = 'hole'; p.stage = 0; p.g = 0; p.water = 0; refreshPlot(p); a.target = null; }
+      save();
+    }
+  } else {
+    a.eatT = 0; a.munch = 0; a.mouth.scale.y = a.s * .03;
+    a.hopT += dt / HOP;
+    const ph = a.hopT % 1;
+    if (ph < .55) {
+      a.air = Math.sin(ph / .55 * Math.PI) * .16; a.sqv = -.08;
+      const sp = .3 / (.55 * HOP) * (a.leaving ? 1.4 : 1), st = Math.min(d, sp * dt);
+      if (d > 0) { a.x += dx / d * st; a.z += dz / d * st; }
+      if (d > .02) { const want = Math.atan2(dx, dz); a.face += (((want - a.face + Math.PI * 3) % TAU) - Math.PI) * Math.min(1, dt * 8); }
+    } else { a.air = 0; a.sqv = Math.sin((ph - .55) / .45 * Math.PI) * .18; }
+    if (a.leaving && Math.hypot(a.x - GARDEN.x, a.z - GARDEN.z) > 5.4) a.gone = true;
+  }
+  applyAlienTransform(a);
+}
+function applyAlienTransform(a) {
+  a.root.position.set(a.x, 0, a.z); a.root.rotation.y = a.face;
+  a.hop.position.y = a.air;
+  const q = clamp(a.sqv, -.15, .25), k = easeOut(a.spawnT);
+  a.sq.scale.set((1 + q) * k, (1 - q) * k, (1 + q) * k);
+}
+function zigzag(attr, segs, r1, r2) {
+  const arr = attr.array; let i = 0;
+  for (let b = 0; b < segs / 3; b++) {
+    const th = rand(0, TAU), ph = rand(-1, 1);
+    let px = Math.cos(th) * r1, py = ph * r1 * .6, pz = Math.sin(th) * r1;
+    for (let k = 1; k <= 3; k++) {
+      const rk = lerp(r1, r2, k / 3), t2 = th + rand(-.35, .35);
+      const nx = Math.cos(t2) * rk, ny = py + rand(-.05, .05), nz = Math.sin(t2) * rk;
+      arr[i++] = px; arr[i++] = py; arr[i++] = pz; arr[i++] = nx; arr[i++] = ny; arr[i++] = nz;
+      px = nx; py = ny; pz = nz;
+    }
+  }
+  attr.needsUpdate = true;
+}
+function alienCenter(a, out) { return out.set(a.x, a.air + a.s * .5, a.z); }
+
+/* ---------- zap bolts ---------- */
+let bolts = [];
+function makeBolt() {
+  const g = new THREE.Group();
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: TEX.glow, color: '#fff36b', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+  glow.scale.set(.3, .3, 1); g.add(glow);
+  g.add(mesh(SPH, basic('#ffffff'), 0, 0, 0, .035));
+  const lines = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(9 * 2 * 3), 3)), new THREE.LineBasicMaterial({ color: '#9ff5ff' }));
+  g.add(lines); g.userData.lines = lines;
+  return g;
+}
+const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _q = new THREE.Quaternion();
+let lastShot = -1;
+function fireBolt(origin, dir, target) {
+  if (T - lastShot < .16) return;
+  lastShot = T;
+  if (!target) {
+    // gentle aim assist: pick the alien closest to the aim line
+    let best = null, bestDot = Math.cos(.38);
+    for (const a of aliens) {
+      if (a.dying) continue;
+      alienCenter(a, _a).sub(origin).normalize();
+      const d = _a.dot(dir); if (d > bestDot) { bestDot = d; best = a; }
+    }
+    target = best;
+  }
+  const obj = makeBolt(); obj.position.copy(origin); scene.add(obj);
+  bolts.push({ obj, vel: dir.clone().normalize().multiplyScalar(7.5), target, life: target ? 2.5 : 1.4 });
+  zapKick = .25; buzz('left', .5, 60);
+  emit('soft', origin, new THREE.Vector3(), { color: '#fff36b', size: .12, life: .2, add: true, grow: 1.5 });
+  sfx('pew');
+}
+function zapperOrigin(out) { return zapper.userData.orb.getWorldPosition(out); }
+function shootAt(point, target) {
+  const o = zapperOrigin(new THREE.Vector3());
+  aimPoint.copy(point); zapAimT = .5;
+  fireBolt(o, point.clone().sub(o), target);
+}
+function updateBolts(dt) {
+  for (const b of bolts) {
+    const tg = b.target && !b.target.gone && !b.target.dying ? b.target : null;
+    if (tg) { alienCenter(tg, _a).sub(b.obj.position).normalize().multiplyScalar(7.5); b.vel.lerp(_a, Math.min(1, dt * 10)); }
+    b.obj.position.addScaledVector(b.vel, dt); b.life -= dt;
+    zigzag(b.obj.userData.lines.geometry.attributes.position, 9, .04, .1);
+    if (Math.random() < dt * 40) emit('spark', b.obj.position, new THREE.Vector3(rand(-.2, .2), rand(-.2, .2), rand(-.2, .2)), { color: pick(['#fff36b', '#9ff5ff', '#ffffff']), size: .03, life: .3, add: true });
+    for (const a of aliens) {
+      if (a.dying || a.gone) continue;
+      if (alienCenter(a, _a).distanceTo(b.obj.position) < a.s * .75) { hitAlien(a, b.obj.position); b.life = -1; break; }
+    }
+    if (b.obj.position.y < 0) b.life = 0;
+    if (b.life <= 0) {
+      if (b.life > -1) burst('spark', b.obj.position, 6, ['#fff36b', '#9ff5ff'], .8, .03, { g: 0, add: true });
+      scene.remove(b.obj);
+    }
+  }
+  bolts = bolts.filter(b => b.life > 0);
+}
+function hitAlien(a, pos) {
+  a.hp--; a.zap = .55; a.dying = a.hp <= 0;
+  emit('soft', pos, new THREE.Vector3(), { color: '#fff36b', size: .3, life: .3, add: true, grow: 2 });
+  burst('spark', pos, 10, ['#fff36b', '#ffffff', '#9ff5ff'], 1.2, .04, { g: 0, add: true });
+  sfx('bzzt'); buzz('left', .8, 120); buzz('right', .4, 80);
+}
+function poof(a) {
+  const c = alienCenter(a, new THREE.Vector3());
+  burst('star', c, 16, [ALIEN[a.kind].main, ALIEN[a.kind].spot, '#fff36b', '#ffffff'], 1.6, .07, { g: -1.2, life: 1 });
+  burst('heart', c, 6, ['#ff9ac8', '#ffd3e8'], .7, .06, { g: .6, life: 1.2 });
+  burst('square', c, 10, [ALIEN[a.kind].main, ALIEN[a.kind].dark], 1.4, .04, { g: -4 });
+  emit('soft', c, new THREE.Vector3(), { color: '#ffffff', size: .5, life: .35, grow: 1.5 });
+  a.gone = true; zapped++; bumpHud('pZapped'); refreshCounters(); sfx('poof'); save();
+}
+
+/* =========================================================
+   Butterflies
+   ========================================================= */
+const butterflies = [];
+{
+  const wingGeo = new THREE.PlaneGeometry(.13, .13); wingGeo.translate(.065, 0, 0); wingGeo.rotateX(-Math.PI / 2);
+  [['#ffb3d9', '#ff7eb6'], ['#fff08a', '#ffc93c'], ['#cdb6ff', '#9b63e8'], ['#a8f0ff', '#4fb1ec'], ['#ffc8a8', '#ff8f6b'], ['#c8ffb0', '#6ed36a'], ['#ffd3e8', '#e0579a'], ['#e8dcff', '#b48cff'], ['#fff6c0', '#f2a81d']].forEach(([c, edge]) => {
+    const g = new THREE.Group(), mat = new THREE.MeshBasicMaterial({ map: canvasTex(wingCanvas(c, edge)), transparent: true, side: THREE.DoubleSide, depthWrite: false });
+    const wr = new THREE.Mesh(wingGeo, mat), wl = new THREE.Mesh(wingGeo, mat); wl.scale.x = -1;
+    g.add(wr, wl, mesh(SPH_LO, basic('#5a2f7a'), 0, 0, 0, .01, .01, .045));
+    for (const sx of [-1, 1]) { const an = mesh(new THREE.CylinderGeometry(.0015, .0015, .05, 4), basic('#5a2f7a'), sx * .012, .012, .06); an.rotation.set(1.1, 0, -sx * .4); g.add(an); }
+    g.position.set(rand(-3, 3), rand(.7, 2), rand(-3.5, -.6)); scene.add(g);
+    butterflies.push({ g, wr, wl, a: rand(0, TAU), ph: rand(0, 6), rest: 0, target: null, think: rand(2, 6), y: g.position.y });
+  });
+}
+function updateButterflies(dt) {
+  const blooms = plots.filter(p => p.state === 'plant' && p.stage >= 4);
+  for (const b of butterflies) {
+    b.ph += dt * (b.rest > 0 ? 3 : 14);
+    const flap = b.rest > 0 ? .3 + .3 * Math.sin(b.ph) : .2 + 1.1 * Math.abs(Math.sin(b.ph));
+    b.wr.rotation.z = flap; b.wl.rotation.z = -flap;
+    if (b.rest > 0) {
+      b.rest -= dt;
+      if (!b.target || b.target.state !== 'plant' || b.target.stage < 4) b.rest = 0;
+      else { b.target.o.head.getWorldPosition(_a); b.g.position.lerp(_a.add(_b.set(0, .09, 0)), Math.min(1, dt * 6)); }
+      if (b.rest <= 0) { b.target = null; b.think = rand(4, 9); }
+      continue;
+    }
+    b.think -= dt;
+    if (b.think <= 0) { b.think = rand(5, 10); if (!b.target && blooms.length && Math.random() < .6) b.target = pick(blooms); }
+    let want;
+    if (b.target) {
+      if (b.target.state !== 'plant' || b.target.stage < 4) { b.target = null; continue; }
+      b.target.o.head.getWorldPosition(_a); _a.y += .09;
+      want = Math.atan2(_a.x - b.g.position.x, _a.z - b.g.position.z);
+      b.y = _a.y;
+      if (b.g.position.distanceTo(_a) < .08) { b.rest = rand(3, 7); continue; }
+    } else {
+      want = b.a + Math.sin(T * .6 + b.ph * .05) * 1.4;
+      const dx = b.g.position.x - GARDEN.x, dz = b.g.position.z - GARDEN.z;
+      if (Math.hypot(dx, dz) > 3.6 || dz > .2) want = Math.atan2(-dx, -(dz + 2));
+      if (Math.random() < dt * .3) b.y = rand(.7, 2);
+    }
+    b.a += (((want - b.a + Math.PI * 3) % TAU) - Math.PI) * Math.min(1, dt * 2.5);
+    const sp = b.target ? .7 : .5;
+    b.g.position.x += Math.sin(b.a) * sp * dt; b.g.position.z += Math.cos(b.a) * sp * dt;
+    b.g.position.y += (b.y - b.g.position.y) * Math.min(1, dt * 1.5) + Math.sin(b.ph * .4) * .15 * dt;
+    b.g.rotation.y = b.a;
+  }
+}
+
+/* =========================================================
+   Little birds: they circle the sky, land on the fence or the sign, hop and chirp
+   ========================================================= */
+const birds = [];
+function makeBird(col, belly) {
+  const g = new THREE.Group(), body = new THREE.Group(); g.add(body);
+  const c = toon(col);
+  body.add(mesh(SPH, c, 0, 0, 0, .065, .058, .08));
+  body.add(mesh(SPH, toon(belly), 0, -.012, -.03, .05, .042, .05));
+  const head = new THREE.Group(); head.position.set(0, .06, -.055); body.add(head);
+  head.add(mesh(SPH, c, 0, 0, 0, .048));
+  for (const sx of [-1, 1]) {
+    head.add(mesh(SPH_LO, basic('#2d1b3d'), sx * .025, .01, -.036, .009, .011, .006));
+    head.add(mesh(SPH_LO, basic('#ffffff'), sx * .022, .015, -.04, .003));
+    head.add(mesh(SPH_LO, basic('#ff9ccc'), sx * .033, -.008, -.03, .01, .006, .004));
+  }
+  const beak = mesh(new THREE.ConeGeometry(.013, .03, 6), toon('#ffb347'), 0, -.004, -.055); beak.rotation.x = -Math.PI / 2; head.add(beak);
+  const tail = mesh(SPH_LO, c, 0, .015, .085, .03, .008, .045); tail.rotation.x = -.4; body.add(tail);
+  const wings = [-1, 1].map(sx => { const pv = new THREE.Group(); pv.position.set(sx * .05, .015, 0); pv.add(mesh(SPH_LO, toon(col), sx * .04, 0, .005, .05, .01, .04)); body.add(pv); return pv; });
+  for (const sx of [-1, 1]) body.add(mesh(new THREE.CylinderGeometry(.004, .004, .03, 4), toon('#ffb347'), sx * .02, -.065, 0));
+  return { g, body, head, wings };
+}
+const PERCHES = [];
+for (let d = -80; d <= 80; d += 8) { const a = d * Math.PI / 180; PERCHES.push(new THREE.Vector3(Math.sin(a) * 5.6, .7, -Math.cos(a) * 5.6)); }
+for (const x of [-.6, -.2, .2, .6]) PERCHES.push(new THREE.Vector3(x, 1.59, -4.35));
+[['#8fd3ff', '#e6f6ff'], ['#ffd84d', '#fff6c8'], ['#ffadd2', '#ffe6f1'], ['#b9f0a8', '#effde9'], ['#c9b3ff', '#f1eaff']].forEach(([c, belly], i) => {
+  const b = makeBird(c, belly);
+  const R = rand(5, 9), ang = rand(0, TAU);
+  Object.assign(b, { state: 'fly', R, ang, cx: rand(-2, 2), cz: rand(-5, -1), h: rand(3, 5.5), dir: Math.random() < .5 ? 1 : -1, sp: rand(1.6, 2.4), think: rand(4, 12), perch: null, stay: 0, hopT: 0, flapPh: rand(0, 6) });
+  b.g.position.set(b.cx + Math.cos(ang) * R, b.h, b.cz + Math.sin(ang) * R);
+  scene.add(b.g); birds.push(b);
+});
+const _bt = new THREE.Vector3();
+function updateBirds(dt) {
+  for (const b of birds) {
+    const pos = b.g.position;
+    if (b.state === 'fly') {
+      b.ang += b.dir * b.sp / b.R * dt;
+      _bt.set(b.cx + Math.cos(b.ang) * b.R, b.h + Math.sin(T * .8 + b.flapPh) * .4, b.cz + Math.sin(b.ang) * b.R);
+      b.think -= dt;
+      if (b.think <= 0) {
+        const free = PERCHES.filter(p => !birds.some(o => o.perch === p));
+        if (free.length) { b.perch = pick(free); b.state = 'land'; }
+        else b.think = rand(4, 8);
+      }
+    } else if (b.state === 'land') _bt.copy(b.perch);
+    else _bt.copy(b.perch);
+    const d = _bt.distanceTo(pos);
+    if (b.state === 'perch') {
+      // sit: wings folded, little hops, head tilts, and a chirp now and then
+      b.stay -= dt; b.hopT -= dt;
+      if (b.hopT <= 0) { b.hopT = rand(.8, 2.4); b.hop = .25; if (Math.random() < .5) b.facing += rand(-1, 1); if (Math.random() < .45) chirp(pos); }
+      b.hop = Math.max(0, (b.hop || 0) - dt);
+      pos.y = b.perch.y + Math.sin(Math.max(0, b.hop) / .25 * Math.PI) * .05;
+      b.head.rotation.z = Math.sin(T * 2.3 + b.flapPh) * .35;
+      b.wings.forEach((w, i) => w.rotation.z = (i ? -1 : 1) * .05);
+      b.g.rotation.y = b.facing;
+      if (b.stay <= 0) {
+        // take off onto a new circle that starts where the bird is
+        b.state = 'fly'; b.R = rand(5, 9); b.ang = rand(0, TAU); b.cx = pos.x - Math.cos(b.ang) * b.R; b.cz = pos.z - Math.sin(b.ang) * b.R;
+        b.h = rand(3, 5.5); b.think = rand(6, 14); b.perch = null; chirp(pos);
+      }
+      continue;
+    }
+    // flying (to the circle or down to a perch)
+    const speed = b.state === 'land' ? 2.2 : 3.5;
+    _a.subVectors(_bt, pos);
+    if (b.state === 'land' && d < .05) { b.state = 'perch'; pos.copy(b.perch); b.stay = rand(4, 9); b.hopT = rand(.3, 1); b.facing = Math.atan2(pos.x, pos.z); chirp(pos); continue; }
+    const step = Math.min(d, speed * dt);
+    if (d > 1e-4) { _a.multiplyScalar(step / d); pos.add(_a); b.g.rotation.y = Math.atan2(-_a.x, -_a.z); }
+    b.body.rotation.x = clamp(-_a.y / Math.max(step, 1e-4), -.6, .6) * .5;
+    b.head.rotation.z = 0;
+    const flap = Math.sin(T * 22 + b.flapPh);
+    b.wings.forEach((w, i) => w.rotation.z = (i ? -1 : 1) * flap * .9);
+  }
+}
+let lastChirp = 0;
+function chirp(pos) {
+  if (T - lastChirp < .35) return;
+  const d = pos.distanceTo(camPos); if (d > 12) return;
+  lastChirp = T;
+  const v = .05 / Math.max(1, d * .45), base = rand(2600, 3400);
+  sfx('chirp', { v, base });
+}
+
+/* =========================================================
+   Audio (all synthesized)
+   ========================================================= */
+let AC = null, outBus = null, sfxBus = null, musBus = null, noiseBuf = null, nextNote = 0, musicStep = 0, melIdx = 5, muted = false;
+const SCALE = [60, 62, 64, 67, 69, 72, 74, 76, 79, 81, 84], ROOTS = [48, 53, 55, 45];
+const mf = m => 440 * Math.pow(2, (m - 69) / 12);
+function ensureAudio() {
+  if (AC) { if (AC.state === 'suspended') AC.resume(); return; }
+  try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
+  outBus = AC.createGain(); outBus.gain.value = muted ? 0 : 1; outBus.connect(AC.destination);
+  sfxBus = AC.createGain(); sfxBus.gain.value = .55; sfxBus.connect(outBus);
+  musBus = AC.createGain(); musBus.gain.value = .14; musBus.connect(outBus);
+  const dl = AC.createDelay(1), fb = AC.createGain(), lp = AC.createBiquadFilter();
+  dl.delayTime.value = .36; fb.gain.value = .38; lp.type = 'lowpass'; lp.frequency.value = 1800;
+  musBus.connect(dl); dl.connect(lp); lp.connect(fb); fb.connect(dl); lp.connect(outBus);
+  nextNote = AC.currentTime + .3; setInterval(scheduleMusic, 120);
+}
+function tone(f, dur, o = {}) {
+  if (!AC) return null;
+  const t0 = AC.currentTime + (o.when || 0), osc = AC.createOscillator(), g = AC.createGain();
+  osc.type = o.type || 'sine'; osc.frequency.setValueAtTime(f, t0);
+  if (o.to) osc.frequency.exponentialRampToValueAtTime(o.to, t0 + (o.slide || dur));
+  const v = o.vol ?? .25;
+  g.gain.setValueAtTime(.0001, t0); g.gain.exponentialRampToValueAtTime(v, t0 + (o.atk || .008)); g.gain.exponentialRampToValueAtTime(.0001, t0 + dur);
+  osc.connect(g); g.connect(o.bus || sfxBus); osc.start(t0); osc.stop(t0 + dur + .05);
+  return osc;
+}
+function noise(dur, o = {}) {
+  if (!AC) return;
+  if (!noiseBuf) { noiseBuf = AC.createBuffer(1, AC.sampleRate, AC.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+  const t0 = AC.currentTime + (o.when || 0), src = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
+  src.buffer = noiseBuf; f.type = o.ft || 'lowpass'; f.frequency.value = o.freq || 1000; f.Q.value = o.q || .7;
+  const v = o.vol ?? .2;
+  g.gain.setValueAtTime(.0001, t0); g.gain.exponentialRampToValueAtTime(v, t0 + .005); g.gain.exponentialRampToValueAtTime(.0001, t0 + dur);
+  src.connect(f); f.connect(g); g.connect(sfxBus); src.start(t0, Math.random() * .5); src.stop(t0 + dur + .05);
+}
+function scheduleMusic() {
+  if (!AC || muted) { if (AC) nextNote = AC.currentTime + .2; return; }
+  while (nextNote < AC.currentTime + .5) {
+    const when = nextNote - AC.currentTime;
+    if (musicStep % 8 === 0) {
+      const root = ROOTS[(musicStep / 8 | 0) % ROOTS.length];
+      tone(mf(root), 3.2, { vol: .2, atk: .4, bus: musBus, when }); tone(mf(root + 7), 3.2, { vol: .08, atk: .6, bus: musBus, when });
+    }
+    melIdx = clamp(melIdx + pick([-2, -1, -1, 0, 1, 1, 2]), 2, SCALE.length - 1);
+    if (Math.random() < .68) { tone(mf(SCALE[melIdx]), 1.4, { vol: .22, bus: musBus, when }); tone(mf(SCALE[melIdx] + 12), .5, { vol: .04, type: 'triangle', bus: musBus, when }); }
+    nextNote += .44; musicStep++;
+  }
+}
+const SFX = {
+  hoe() { noise(.14, { freq: 500, vol: .35 }); tone(140, .14, { to: 70, vol: .3 }); },
+  rake() { noise(.32, { ft: 'bandpass', freq: 3000, q: 1.2, vol: .16 }); noise(.28, { ft: 'bandpass', freq: 2400, q: 1.2, vol: .13, when: .3 }); },
+  shovel() { tone(520, .12, { to: 180, vol: .25, type: 'triangle' }); noise(.1, { freq: 800, vol: .25, when: .05 }); },
+  seeds() { for (let i = 0; i < 6; i++) tone(rand(1800, 2800), .07, { vol: .07, when: i * .07 + rand(0, .03) }); },
+  water() { for (let i = 0; i < 5; i++) tone(rand(480, 680), .12, { to: rand(900, 1300), vol: .1, when: i * .12 }); },
+  grow(st) { tone(mf(72 + [0, 4, 7, 12][st - 1]), .4, { type: 'triangle', vol: .1 }); },
+  bloom() { [72, 76, 79, 84].forEach((m, i) => tone(mf(m + 12), .7, { vol: .09, when: i * .09, type: 'triangle' })); },
+  pick() { [88, 84, 91].forEach((m, i) => tone(mf(m), .35, { vol: .08, when: i * .07 })); },
+  pew() { tone(1400, .2, { to: 350, type: 'square', vol: .045 }); tone(900, .18, { to: 1800, vol: .08 }); },
+  bzzt() { const o = tone(120, .32, { type: 'sawtooth', vol: .07 }); if (o) for (let k = 0; k < 10; k++) o.frequency.setValueAtTime(k % 2 ? 90 : 170, AC.currentTime + k * .03); },
+  poof() { tone(500, .18, { to: 1500, vol: .14 }); noise(.12, { ft: 'highpass', freq: 3000, vol: .08 }); tone(mf(84), .35, { vol: .07, when: .1, type: 'triangle' }); },
+  boing() { tone(260, .35, { to: 560, slide: .12, vol: .09 }); },
+  nom() { noise(.07, { freq: 700, vol: .2 }); noise(.07, { freq: 650, vol: .18, when: .15 }); },
+  swap() { tone(700, .08, { to: 1100, vol: .06, type: 'triangle' }); },
+  chirp(o) { for (let i = 0; i < 2 + (Math.random() * 2 | 0); i++) tone(o.base * rand(.9, 1.1), .07, { to: o.base * 1.35, vol: o.v, when: i * .1 }); },
+  cheer() { [72, 76, 79, 84, 88].forEach((m, i) => tone(mf(m), .5, { vol: .09, when: i * .1, type: 'triangle' })); }
+};
+function sfx(name, arg) { if (AC && !muted) SFX[name](arg); }
+
+/* =========================================================
+   Game logic
+   ========================================================= */
+let tool = 'hoe', flowers = 0, zapped = 0, started = false, spawnT = 14;
+let hoverPlot = null, toolAnim = null, zapKick = 0, zapAimT = 0, cooldown = 0;
+const aimPoint = new THREE.Vector3();
+let timers = [];
+function later(t, fn) { timers.push({ t, fn }); }
+
+function setTool(t, quiet) {
+  if (t === tool) return;
+  tool = t;
+  document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
+  Object.entries(TOOLS3).forEach(([k, m]) => m.visible = k === t);
+  toolSwing.visible = t !== 'zap' || !xrActive();
+  paletteBtns.forEach(b => { const on = b.userData.tool === t; b.scale.setScalar(on ? 1.3 : 1); b.position.z = on ? .01 : 0; });
+  if (!quiet) { sfx('swap'); buzz('right', .2, 30); }
+}
+function cycleTool(dir) {
+  const L = ['hoe', 'rake', 'shovel', 'seeds', 'water'];
+  const i = L.indexOf(tool); setTool(L[((i < 0 ? 0 : i) + dir + L.length) % L.length]);
+}
+function nudge(t) { const b = document.getElementById('t-' + t); if (!b) return; b.classList.remove('nudge'); void b.offsetWidth; b.classList.add('nudge'); }
+function bumpHud(id) { const el = document.getElementById(id); el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); }
+
+function actOnPlot(p) {
+  if (cooldown > 0) return;
+  const need = neededTool(p);
+  if (need === 'pick') { pickFlower(p); return; }
+  if (tool !== need) {
+    // wrong tool: wiggle the plot and hand over the right one, so the next press works
+    p.wob = .7; nudge(need); setTool(need); return;
+  }
+  cooldown = .4;
+  toolAnim = { tool, t: 0, dur: tool === 'water' ? .9 : .55, plot: p };
+  buzz('right', .35, 50);
+  const apply = () => {
+    if (neededTool(p) !== need) return;
+    p.wob = 1;
+    switch (need) {
+      case 'hoe': p.state = 'plowed'; dirt(p, 14); sfx('hoe'); break;
+      case 'rake': p.state = 'fluffy'; dirt(p, 8); break;
+      case 'shovel': p.state = 'hole'; dirt(p, 12); break;
+      case 'seeds': p.state = 'plant'; p.stage = 0; p.g = 0; p.water = 0; p.color = pick(PETALS); break;
+      case 'water': p.water = 1; break;
+    }
+    refreshPlot(p);
+    burst('star', _v.set(p.x, .25, p.z), 7, ['#fff36b', '#ffffff', '#ffd3e8'], .9, .045, { g: -1 });
+    buzz('right', .6, 70); save();
+  };
+  if (need === 'rake') sfx('rake'); if (need === 'shovel') later(.2, () => sfx('shovel')); if (need === 'seeds') sfx('seeds'); if (need === 'water') sfx('water');
+  later(need === 'water' ? .55 : .28, apply);
+}
+function pickFlower(p) {
+  const start = p.o.head.getWorldPosition(new THREE.Vector3());
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: TEX.daisy, color: p.color, transparent: true, depthWrite: false }));
+  spr.scale.set(.26, .26, 1); spr.position.copy(start); scene.add(spr);
+  const ctrl = start.clone().lerp(SIGN_TARGET, .5); ctrl.y += 1.2;
+  flyers.push({ spr, start, ctrl, end: SIGN_TARGET.clone(), t: 0 });
+  for (let i = 0; i < 8; i++) emit('petal', start, new THREE.Vector3(rand(-.6, .6), rand(.2, .9), rand(-.6, .6)), { color: p.color === '#ffffff' ? '#ffffff' : p.color, size: .05, aspect: .5, g: -.5, drag: 1.5, life: 1.4, spin: rand(-4, 4) });
+  burst('heart', start, 4, ['#ff7eb6', '#ff9ac8'], .5, .05, { g: .5, life: 1.2 });
+  p.state = 'grass'; p.stage = 0; p.g = 0; p.water = 0; refreshPlot(p);
+  sfx('pick'); buzz('right', .5, 60); save();
+}
+const flyers = [];
+function updateFlyers(dt) {
+  for (const f of flyers) {
+    f.t += dt / 1.1;
+    const k = easeOut(Math.min(1, f.t)), u = 1 - k;
+    f.spr.position.set(u * u * f.start.x + 2 * u * k * f.ctrl.x + k * k * f.end.x, u * u * f.start.y + 2 * u * k * f.ctrl.y + k * k * f.end.y, u * u * f.start.z + 2 * u * k * f.ctrl.z + k * k * f.end.z);
+    f.spr.material.rotation = k * 6;
+    if (f.t >= 1) {
+      scene.remove(f.spr); flowers++; bumpHud('pFlowers'); refreshCounters();
+      burst('star', f.end, 8, ['#fff36b', '#ffffff'], .8, .05, { g: 0 });
+      if (flowers % 5 === 0) celebrate();
+      save();
+    }
+  }
+  for (let i = flyers.length - 1; i >= 0; i--) if (flyers[i].t >= 1) flyers.splice(i, 1);
+}
+function celebrate() {
+  sfx('cheer');
+  camera.getWorldPosition(_a);
+  for (let i = 0; i < 70; i++) {
+    const kind = Math.random() < .3 ? 'heart' : 'petal';
+    emit(kind, _b.set(_a.x + rand(-3, 3), _a.y + rand(1.2, 2.5), _a.z + rand(-4, 1)), new THREE.Vector3(rand(-.2, .2), rand(-.5, -.2), rand(-.2, .2)),
+      { color: pick(['#ffffff', '#ffd3e8', '#fff1a6', '#e8dcff', '#ff9ac8']), size: kind === 'petal' ? .06 : .05, aspect: kind === 'petal' ? .5 : 1, g: -.15, life: rand(3, 5), spin: rand(-3, 3) });
+  }
+}
+
+/* ---------- counters (DOM + the garden sign) ---------- */
+function refreshCounters() {
+  document.getElementById('nFlowers').textContent = flowers; document.getElementById('nZapped').textContent = zapped;
+  const g = signCanvas.getContext('2d'); g.clearRect(0, 0, 512, 200);
+  g.fillStyle = '#fff6e8'; rr(g, 6, 6, 500, 188, 40); g.fill();
+  g.strokeStyle = '#e6b07a'; g.lineWidth = 6; rr(g, 6, 6, 500, 188, 40); g.stroke();
+  g.save(); g.translate(40, 22); g.scale(156 / 46, 156 / 46); paintIcon(g, 'daisy'); g.restore();
+  g.save(); g.translate(278, 22); g.scale(156 / 46, 156 / 46); paintIcon(g, 'cube'); g.restore();
+  g.fillStyle = '#5a2f7a'; g.font = '800 92px Sniglet, "Trebuchet MS", sans-serif'; g.textBaseline = 'middle';
+  g.fillText(String(flowers), 190, 108); g.fillText(String(zapped), 428, 108);
+  signTex.needsUpdate = true;
+}
+
+/* =========================================================
+   Input — desktop (drag to look, click to act) and VR controllers
+   ========================================================= */
+const raycaster = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+function castFrom(rc) {
+  // priority: wrist palette, then cubes (never hidden behind a plot), then plots and plants
+  if (xrActive()) { const h = rc.intersectObjects(paletteBtns, false); if (h.length) return h[0]; }
+  const ha = rc.intersectObjects(alienHits, false); if (ha.length) return ha[0];
+  const targets = hitboxes.slice();
+  for (const p of plots) if (p.state === 'plant') { p.o.plantHit.scale.y = plantHeight(p) + .35; p.o.plantHit.position.y = (plantHeight(p) + .35) / 2 + .05; p.o.plantHit.updateMatrixWorld(); targets.push(p.o.plantHit); }
+  const h = rc.intersectObjects(targets, false);
+  return h.length ? h[0] : null;
+}
+function handleHit(hit, rc) {
+  if (!started) return;
+  const o = hit && hit.object;
+  if (o && o.userData.tool) { setTool(o.userData.tool); return; }
+  if (o && o.userData.alien) { shootAt(alienCenter(o.userData.alien, new THREE.Vector3()), o.userData.alien); return; }
+  if (tool === 'zap') { shootAt(hit ? hit.point : rc.ray.at(6, new THREE.Vector3()), null); return; }
+  if (o && o.userData.plot) actOnPlot(o.userData.plot);
+}
+const stageEl = document.getElementById('stage');
+let drag = null;
+const keys = {};
+renderer.domElement.addEventListener('pointerdown', e => {
+  ensureAudio();
+  drag = { x: e.clientX, y: e.clientY, yaw, pitch, moved: false, id: e.pointerId };
+  renderer.domElement.setPointerCapture(e.pointerId);
+});
+renderer.domElement.addEventListener('pointermove', e => {
+  if (drag && drag.id === e.pointerId) {
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (Math.hypot(dx, dy) > 7) drag.moved = true;
+    if (drag.moved) { yaw = drag.yaw - dx * .005; pitch = clamp(drag.pitch - dy * .005, -1.25, .7); }
+    return;
+  }
+  setNdc(e); raycaster.setFromCamera(ndc, camera);
+  const hit = castFrom(raycaster);
+  hoverPlot = hit && hit.object.userData.plot || null;
+  stageEl.classList.toggle('hover', !!hit);
+});
+renderer.domElement.addEventListener('pointerup', e => {
+  if (!drag || drag.id !== e.pointerId) return;
+  const wasClick = !drag.moved; drag = null;
+  if (!wasClick) return;
+  setNdc(e); raycaster.setFromCamera(ndc, camera);
+  handleHit(castFrom(raycaster), raycaster);
+});
+renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
+function setNdc(e) { ndc.set(e.clientX / window.innerWidth * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1); }
+window.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  const i = '123456'.indexOf(e.key);
+  if (i >= 0) setTool(['hoe', 'rake', 'shovel', 'seeds', 'water', 'zap'][i]);
+  if (e.code === 'Space' && started) {
+    e.preventDefault(); ensureAudio();
+    raycaster.setFromCamera(ndc.set(0, 0), camera);
+    const hit = castFrom(raycaster);
+    shootAt(hit ? hit.point : raycaster.ray.at(6, new THREE.Vector3()), hit && hit.object.userData.alien || null);
+  }
+});
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+window.addEventListener('wheel', e => { if (started) cycleTool(e.deltaY > 0 ? 1 : -1); }, { passive: true });
+document.querySelectorAll('.tool').forEach(b => b.addEventListener('click', () => { ensureAudio(); setTool(b.dataset.tool); }));
+
+// ---- VR controllers ----
+const hands = { right: null, left: null };
+const ctrlRay = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]), new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: .8 }));
+const ctrlDot = mesh(SPH, basic('#ffffff'), 0, 0, -1, .012);
+const zapGuide = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -.8)]), new THREE.LineDashedMaterial({ color: '#fff36b', dashSize: .04, gapSize: .04, transparent: true, opacity: .6 }));
+zapGuide.computeLineDistances();
+for (let i = 0; i < 2; i++) {
+  const ctrl = renderer.xr.getController(i), grip = renderer.xr.getControllerGrip(i);
+  dolly.add(ctrl); dolly.add(grip);
+  const entry = { ctrl, grip, gamepad: null, latch: false, btn: [] };
+  ctrl.addEventListener('connected', e => {
+    entry.gamepad = e.data.gamepad || null;
+    const side = e.data.handedness === 'left' ? 'left' : (hands.right && hands.right !== entry ? 'left' : 'right');
+    entry.side = side; hands[side] = entry; attachRigs();
+  });
+  ctrl.addEventListener('disconnected', () => { if (hands[entry.side] === entry) hands[entry.side] = null; attachRigs(); });
+  ctrl.addEventListener('selectstart', () => onTrigger(entry));
+  ctrl.addEventListener('squeezestart', () => { if (entry.side === 'right') cycleTool(1); else cycleTool(-1); });
+}
+function xrActive() { return renderer.xr.isPresenting; }
+function rayFromCtrl(entry, rc) {
+  _q.setFromRotationMatrix(entry.ctrl.matrixWorld);
+  rc.ray.origin.setFromMatrixPosition(entry.ctrl.matrixWorld);
+  rc.ray.direction.set(0, 0, -1).applyQuaternion(_q);
+}
+function onTrigger(entry) {
+  if (!started) return;
+  ensureAudio();
+  if (entry.side === 'left' && hands.right) {
+    rayFromCtrl(entry, raycaster);
+    fireBolt(zapperOrigin(new THREE.Vector3()), raycaster.ray.direction.clone(), null);
+    return;
+  }
+  rayFromCtrl(entry, raycaster);
+  handleHit(castFrom(raycaster), raycaster);
+}
+function buzz(side, intensity, ms) {
+  const h = hands[side]; const act = h && h.gamepad && h.gamepad.hapticActuators && h.gamepad.hapticActuators[0];
+  if (act && act.pulse) try { act.pulse(intensity, ms); } catch (e) { }
+}
+function attachRigs() {
+  if (xrActive()) {
+    const r = hands.right, l = hands.left;
+    if (r) { r.grip.add(toolRig); toolRig.position.set(0, 0, 0); toolRig.rotation.set(0, 0, 0); toolRig.scale.setScalar(1); r.ctrl.add(ctrlRay); r.ctrl.add(ctrlDot); }
+    if (l) { l.grip.add(zapRig); zapRig.position.set(0, 0, 0); zapRig.rotation.set(0, 0, 0); zapRig.scale.setScalar(1); l.ctrl.add(zapGuide); }
+    else if (r) { r.grip.add(zapRig); zapRig.position.set(0, -.06, .05); zapRig.rotation.set(0, 0, 0); zapRig.scale.setScalar(.7); }
+    palette.visible = true; zapGuide.visible = !!l;
+  } else {
+    camera.add(toolRig); toolRig.position.set(.24, -.27, -.5); toolRig.rotation.set(.55, -.18, 0); toolRig.scale.setScalar(.75);
+    camera.add(zapRig); zapRig.position.set(-.24, -.25, -.5); zapRig.rotation.set(.2, .15, 0); zapRig.scale.setScalar(.75);
+    palette.visible = false;
+    if (ctrlRay.parent) ctrlRay.parent.remove(ctrlRay); if (ctrlDot.parent) ctrlDot.parent.remove(ctrlDot); if (zapGuide.parent) zapGuide.parent.remove(zapGuide);
+  }
+  toolSwing.visible = true;
+}
+function pollGamepads() {
+  for (const side of ['right', 'left']) {
+    const h = hands[side]; if (!h || !h.gamepad) continue;
+    const gp = h.gamepad, ax = gp.axes.length > 2 ? gp.axes[2] : (gp.axes[0] || 0);
+    if (Math.abs(ax) > .7 && !h.latch) { h.latch = true; dolly.rotation.y -= Math.sign(ax) * Math.PI / 4; sfx('swap'); }
+    else if (Math.abs(ax) < .3) h.latch = false;
+    if (side === 'right') {
+      [4, 5].forEach((bi, k) => {
+        const pressed = !!(gp.buttons[bi] && gp.buttons[bi].pressed);
+        if (pressed && !h.btn[bi]) cycleTool(k ? -1 : 1);
+        h.btn[bi] = pressed;
+      });
+    }
+  }
+}
+function updateVrHover() {
+  const r = hands.right; hoverPlot = null;
+  if (!r) return;
+  rayFromCtrl(r, raycaster);
+  const hit = castFrom(raycaster);
+  const dist = hit ? hit.distance : 4;
+  ctrlRay.scale.z = dist; ctrlDot.position.z = -dist; ctrlDot.visible = !!hit;
+  let col = '#ffffff';
+  if (hit) {
+    const o = hit.object;
+    if (o.userData.alien) col = '#fff36b';
+    else if (o.userData.tool) col = '#ff9ac8';
+    else if (o.userData.plot) { hoverPlot = o.userData.plot; const need = neededTool(hoverPlot); col = need === tool || need === 'pick' ? '#8ef08a' : '#ff9ac8'; }
+  }
+  ctrlRay.material.color.set(col); ctrlDot.material.color.set(col);
+}
+
+/* ---------- XR session ---------- */
+const vrBtn = document.getElementById('vrBtn'), vrBtn2 = document.getElementById('vrBtn2'), vrNote = document.getElementById('vrNote');
+async function enterVR() {
+  ensureAudio();
+  try {
+    // seated play: 'local' puts the origin at the head, so the dolly lifts it to the chair's eye height
+    const session = await navigator.xr.requestSession('immersive-vr');
+    renderer.xr.setReferenceSpaceType('local');
+    await renderer.xr.setSession(session);
+    startGame();
+    dolly.position.set(0, EYE, 0); dolly.rotation.set(0, 0, 0);
+    attachRigs();
+    session.addEventListener('end', () => { dolly.position.set(0, 0, 0); dolly.rotation.set(0, 0, 0); camera.position.set(0, EYE, 0); attachRigs(); });
+  } catch (e) {
+    vrNote.textContent = 'Não foi possível entrar no VR (' + (e && e.message ? e.message : 'erro') + ').';
+  }
+}
+if (navigator.xr && navigator.xr.isSessionSupported) {
+  navigator.xr.isSessionSupported('immersive-vr').then(ok => {
+    if (ok) { vrBtn.disabled = false; vrBtn2.hidden = false; vrNote.textContent = 'Óculos de VR encontrado. Coloque o óculos e toque em Entrar no VR.'; }
+    else vrNote.textContent = 'Para jogar em VR, abra esta página no navegador do óculos (ex.: Meta Quest). Aqui dá para jogar com mouse.';
+  }).catch(() => { vrNote.textContent = 'Este navegador não liberou o VR. Dá para jogar com mouse.'; });
+} else vrNote.textContent = 'Para jogar em VR, abra esta página no navegador do óculos (ex.: Meta Quest). Aqui dá para jogar com mouse.';
+vrBtn.addEventListener('click', enterVR); vrBtn2.addEventListener('click', enterVR);
+document.getElementById('playBtn').addEventListener('click', () => { ensureAudio(); startGame(); });
+function startGame() { started = true; document.getElementById('intro').hidden = true; save(); }
+const soundBtn = document.getElementById('soundBtn');
+function setMuted(m) {
+  muted = m; if (outBus) outBus.gain.value = m ? 0 : 1;
+  document.getElementById('waves').hidden = m; document.getElementById('mute').hidden = !m;
+  soundBtn.setAttribute('aria-label', m ? 'Ligar som' : 'Desligar som');
+}
+soundBtn.addEventListener('click', () => { ensureAudio(); setMuted(!muted); save(); });
+
+/* =========================================================
+   Main loop
+   ========================================================= */
+let saveT = 5, alertState = null;
+function update(dt) {
+  camera.getWorldPosition(camPos);
+  if (!xrActive()) {
+    camera.rotation.set(pitch, yaw, 0);
+    // seated: arrows (or A/D) only turn the head, there is no walking
+    if (keys.ArrowLeft || keys.KeyA) yaw += dt * 1.4; if (keys.ArrowRight || keys.KeyD) yaw -= dt * 1.4;
+    if (keys.ArrowUp || keys.KeyW) pitch = Math.min(.7, pitch + dt); if (keys.ArrowDown || keys.KeyS) pitch = Math.max(-1.25, pitch - dt);
+  } else { pollGamepads(); updateVrHover(); }
+  cooldown = Math.max(0, cooldown - dt);
+  for (const t of timers) { t.t -= dt; if (t.t <= 0) t.fn(); }
+  timers = timers.filter(t => t.t > 0);
+  // plants
+  for (const p of plots) {
+    p.wob = Math.max(0, p.wob - dt * 2); p.pop = Math.max(0, p.pop - dt * 1.4);
+    if (p.state === 'plant' && p.stage < 4) {
+      if (p.water > 0) { p.g += dt / GROW; p.water = Math.max(0, p.water - dt / DRY); }
+      if (p.g >= 1) {
+        p.g = 0; p.stage++; p.wob = .6; sfx('grow', p.stage);
+        if (p.stage === 4) {
+          p.pop = 1; p.water = 0; sfx('bloom');
+          burst('star', _v.set(p.x, HT[4] + .15, p.z), 12, ['#fff36b', '#ffffff', p.color === '#ffffff' ? '#ffd3e8' : p.color], 1, .05, { g: -.8 });
+        }
+      }
+    }
+    if (p.state === 'plant' && p.stage >= 4 && Math.random() < dt * .8) emit('spark', _v.set(p.x + rand(-.15, .15), HT[4] + .1 + rand(0, .2), p.z + rand(-.1, .1)), new THREE.Vector3(0, .1, 0), { color: '#fff36b', size: .025, life: .7, add: true });
+    updatePlotVisual(p, dt);
+  }
+  highlight.visible = !!hoverPlot && started;
+  if (hoverPlot) {
+    highlight.position.set(hoverPlot.x, .1, hoverPlot.z); highlight.rotation.y = -hoverPlot.a;
+    const need = neededTool(hoverPlot);
+    highlightRing.material.color.set(tool === 'zap' ? '#fff36b' : need === tool || need === 'pick' ? '#ffffff' : '#ff9ac8');
+    highlightRing.material.opacity = .55 + .35 * Math.sin(T * 6);
+  }
+  // aliens
+  if (started) {
+    const growing = plots.some(p => p.state === 'plant');
+    const alive = aliens.filter(a => !a.dying).length, maxA = Math.min(4, 1 + Math.floor((flowers + zapped) / 6));
+    if (growing) { spawnT -= dt; if (spawnT <= 0 && alive < maxA) { spawnAlien(); spawnT = rand(9, 15) * Math.max(.5, 1 - flowers * .02); } }
+    else spawnT = Math.max(spawnT, 8);
+  }
+  aliens.forEach(a => updateAlien(a, dt));
+  for (const a of aliens) if (a.gone) { scene.remove(a.root); a.bodyMat.dispose(); }
+  aliens = aliens.filter(a => !a.gone); alienHits = aliens.map(a => a.hit);
+  const alert = aliens.some(a => !a.dying) && tool !== 'zap';
+  if (alert !== alertState) { document.getElementById('t-zap').classList.toggle('alert', alert); alertState = alert; }
+  updateBolts(dt); updateFlyers(dt); updateParticles(dt); updateButterflies(dt); updateBirds(dt);
+  cloudRing.rotation.y += dt * .004;
+  animateRigs(dt);
+  saveT -= dt; if (saveT <= 0) { saveT = 5; save(); }
+}
+const _m = new THREE.Matrix4(), _up = new THREE.Vector3(0, 1, 0), _restQ = new THREE.Quaternion(), _aimQ = new THREE.Quaternion(), _toolRestQ = new THREE.Quaternion();
+const _arcFrom = new THREE.Vector3(), _arcTo = new THREE.Vector3(), _arcV = new THREE.Vector3();
+// throws a particle on a ballistic arc that lands on the plot (drops from the can, seeds from the bag)
+function arcTo(tex, from, p, o) {
+  const sp = o.spread ?? .28, G = -6;
+  _arcFrom.copy(from); _arcTo.set(p.x + rand(-sp, sp), .12, p.z + rand(-sp * .8, sp * .8));
+  const flight = clamp(_arcFrom.distanceTo(_arcTo) / 3.2, .22, .75);
+  _arcV.subVectors(_arcTo, _arcFrom).divideScalar(flight);
+  _arcV.y = (_arcTo.y - _arcFrom.y - .5 * G * flight * flight) / flight;
+  emit(tex, _arcFrom, _arcV, Object.assign({ g: G, life: flight }, o));
+}
+function animateRigs(dt) {
+  const vr = xrActive();
+  // garden tool swing
+  let rx = 0, rz = 0;
+  if (toolAnim) {
+    toolAnim.t += dt; const k = Math.min(1, toolAnim.t / toolAnim.dur);
+    const t = toolAnim.tool;
+    if (t === 'hoe' || t === 'rake' || t === 'shovel') rx = -Math.sin(k * Math.PI) * (t === 'shovel' ? .7 : 1.0);
+    else if (t === 'water') {
+      rx = -Math.min(1, k * 4) * .9 * (k > .85 ? (1 - k) / .15 : 1);
+      if (k > .15 && k < .92 && toolAnim.plot) {
+        const tip = TOOLS3.water.userData.tip.getWorldPosition(_a), p = toolAnim.plot;
+        for (let n = 0; n < 2; n++) arcTo('drop', tip, p, { color: pick(['#6cc3f5', '#9bdcff', '#4fb1ec']), size: .03, aspect: 1.4, rot: 0 });
+        if (Math.random() < dt * 25) emit('dot', _b.set(p.x + rand(-.3, .3), .13, p.z + rand(-.25, .25)), new THREE.Vector3(rand(-.3, .3), rand(.4, .8), rand(-.3, .3)), { color: '#bfe9ff', size: .02, g: -5, life: .35 });
+      }
+    } else if (t === 'seeds') {
+      rz = Math.sin(k * Math.PI * 6) * .4;
+      if (Math.random() < dt * 40 && toolAnim.plot) arcTo('dot', TOOLS3.seeds.getWorldPosition(_a), toolAnim.plot, { color: '#8a5a32', size: .022, spread: .12 });
+    }
+    if (k >= 1) toolAnim = null;
+  }
+  const bob = vr ? 0 : Math.sin(T * 2) * .006;
+  if (!vr) {
+    _toolRestQ.setFromEuler(new THREE.Euler(.55, -.18, 0));
+    if (toolAnim && toolAnim.plot) {
+      const local = camera.worldToLocal(_b.set(toolAnim.plot.x, .2, toolAnim.plot.z));
+      _m.lookAt(toolRig.position, local, _up); _aimQ.setFromRotationMatrix(_m);
+      toolRig.quaternion.slerp(_aimQ, Math.min(1, dt * 14));
+      if (toolAnim.tool === 'water') rx *= .45;
+    } else toolRig.quaternion.slerp(_toolRestQ, Math.min(1, dt * 6));
+  }
+  toolSwing.rotation.set(rx, 0, rz); toolSwing.position.y = bob;
+  if (!vr) TOOLS3[tool] && (toolSwing.visible = tool !== 'zap');
+  // zapper recoil, glow pulse, aim on desktop
+  zapKick = Math.max(0, zapKick - dt * 1.6);
+  zapSwing.position.z = zapKick * .2; zapSwing.rotation.x = zapKick * .8;
+  zapper.userData.glow.scale.setScalar(3.5 + Math.sin(T * 8) * .6 + zapKick * 8);
+  zapAimT = Math.max(0, zapAimT - dt);
+  if (!vr) {
+    _restQ.setFromEuler(new THREE.Euler(.2, .15, 0));
+    if (zapAimT > 0) {
+      const local = camera.worldToLocal(_a.copy(aimPoint));
+      _m.lookAt(zapRig.position, local, _up); _aimQ.setFromRotationMatrix(_m);
+      zapRig.quaternion.slerp(_aimQ, Math.min(1, dt * 18));
+    } else zapRig.quaternion.slerp(_restQ, Math.min(1, dt * 6));
+    zapSwing.position.y = bob;
+  }
+}
+let last = performance.now();
+renderer.setAnimationLoop(now => {
+  const dt = Math.min(.05, (now - last) / 1000 || 0); last = now; T += dt;
+  update(dt);
+  renderer.render(scene, camera);
+});
+window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
+
+/* ---------- saving ---------- */
+const KEY = 'plantinhas-vs-slimes-vr';
+function snapshot() { return { flowers, zapped, muted, tool, plots: plots.map(p => ({ state: p.state, stage: p.stage, g: p.g, water: p.water, color: p.color })) }; }
+function save() { try { localStorage.setItem(KEY, JSON.stringify(snapshot())); } catch (e) { } }
+function restore(d) {
+  if (!d || !Array.isArray(d.plots)) return;
+  flowers = d.flowers | 0; zapped = d.zapped | 0;
+  d.plots.slice(0, 12).forEach((s, i) => { Object.assign(plots[i], { state: s.state || 'grass', stage: s.stage | 0, g: +s.g || 0, water: +s.water || 0, color: s.color || '#ffffff' }); refreshPlot(plots[i]); });
+  if (d.muted) setMuted(true);
+  if (d.tool) setTool(d.tool, true);
+}
+window.claude?.hot?.snapshot?.(() => snapshot());
+addEventListener('pagehide', save);
+
+/* ---------- boot ---------- */
+function boot(data) {
+  if (data && data.plots) restore(data);
+  else { try { restore(JSON.parse(localStorage.getItem(KEY) || 'null')); } catch (e) { } }
+  Object.entries(TOOLS3).forEach(([k, m]) => m.visible = k === tool);
+  paletteBtns.forEach(b => b.scale.setScalar(b.userData.tool === tool ? 1.3 : 1));
+  paintDomIcons(); attachRigs(); refreshCounters();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(refreshCounters);
+}
+window.claude?.hot?.ready ? window.claude.hot.ready(boot) : boot(window.claude?.hot?.data ?? {});
+</script>
